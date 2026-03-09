@@ -9,7 +9,7 @@ import threading
 
 import customtkinter as ctk
 
-from app.config import Config, APP_NAME
+from app.config import Config, APP_NAME, APP_VERSION
 from app.core.file_discovery import (
     DiscoveryResult, discover_folder, generate_output_name,
 )
@@ -34,7 +34,7 @@ class CombinerApp(ctk.CTk):
     def __init__(self, config: Config):
         super().__init__()
         self.config = config
-        self.title(APP_NAME)
+        self.title(f"{APP_NAME} v{APP_VERSION}")
         self.geometry(config.window_geometry or "720x680")
         self.minsize(640, 560)
 
