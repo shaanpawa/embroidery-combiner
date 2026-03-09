@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Build artifacts
+*.exe
+*.build/
+*.dist/
+*.onefile-build/
+
+# IDE
+.vscode/
+.idea/
+
+# App data
+license.dat
+settings.json
+combiner_settings.json
+
+# Legacy root-level files (superseded by app/ package)
+/combiner.py
+/converter.py
+/validator.py
+/licensing.py
+/gui.py
+
+# Combined output files
+216-218.dst
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Nuitka
+EmbroideryC.exe
