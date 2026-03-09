@@ -27,7 +27,7 @@ class GapControls(ctk.CTkFrame):
         # Label
         ctk.CTkLabel(
             self,
-            text="Gap",
+            text="Gap between designs",
             font=FONTS["subheading"],
             text_color=theme["text_primary"],
         ).pack(side="left", padx=(0, PAD_SM))

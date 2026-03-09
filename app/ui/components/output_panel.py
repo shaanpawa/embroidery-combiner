@@ -23,7 +23,7 @@ class OutputPanel(ctk.CTkFrame):
         # Label
         ctk.CTkLabel(
             self,
-            text="Output",
+            text="Save as",
             font=FONTS["subheading"],
             text_color=theme["text_primary"],
         ).pack(side="left", padx=(0, PAD_SM))

@@ -10,7 +10,7 @@ import sys
 
 # Application constants
 APP_NAME = "Embroidery Combiner"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 SUPPORTED_EXTENSIONS = {'.ngs', '.dst'}
 

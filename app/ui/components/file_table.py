@@ -118,6 +118,42 @@ class FileRow(ctk.CTkFrame):
             self._on_toggle()
 
 
+class FileTableHeader(ctk.CTkFrame):
+    """Column header row for the file table."""
+
+    def __init__(self, parent, **kwargs):
+        theme = COLORS.get(ctk.get_appearance_mode().lower(), COLORS["dark"])
+        super().__init__(parent, fg_color=theme["bg_secondary"], height=28, **kwargs)
+        self.pack_propagate(False)
+
+        # Spacer for checkbox column
+        ctk.CTkLabel(self, text="", width=24).pack(side="left", padx=(PAD_SM, PAD_XS))
+
+        # Number
+        ctk.CTkLabel(
+            self, text="#", font=FONTS["tiny"], text_color=theme["text_muted"],
+            width=35, anchor="e",
+        ).pack(side="left", padx=(0, PAD_SM))
+
+        # Filename
+        ctk.CTkLabel(
+            self, text="File", font=FONTS["tiny"], text_color=theme["text_muted"],
+            anchor="w",
+        ).pack(side="left", padx=(0, PAD_SM), fill="x", expand=True)
+
+        # Size
+        ctk.CTkLabel(
+            self, text="Size", font=FONTS["tiny"], text_color=theme["text_muted"],
+            width=60, anchor="e",
+        ).pack(side="left", padx=(0, PAD_SM))
+
+        # Status
+        ctk.CTkLabel(
+            self, text="Status", font=FONTS["tiny"], text_color=theme["text_muted"],
+            width=60, anchor="center",
+        ).pack(side="left", padx=(0, PAD_SM))
+
+
 class FileTable(ctk.CTkScrollableFrame):
     """Scrollable file list with per-file checkboxes and status."""
 
@@ -131,10 +167,36 @@ class FileTable(ctk.CTkScrollableFrame):
         )
         self._rows: List[FileRow] = []
         self._on_toggle = on_toggle
+        self._header: Optional[FileTableHeader] = None
+
+        # Empty state placeholder
+        self._empty_label = ctk.CTkLabel(
+            self,
+            text="Select a folder containing your embroidery files",
+            font=FONTS["body"],
+            text_color=theme["text_secondary"],
+        )
+        self._empty_sublabel = ctk.CTkLabel(
+            self,
+            text="Supports .ngs and .dst files",
+            font=FONTS["small"],
+            text_color=theme["text_muted"],
+        )
+        self._empty_label.pack(expand=True, pady=(60, 4))
+        self._empty_sublabel.pack(expand=True, pady=(0, 60))
 
     def populate(self, files: List[DiscoveredFile]):
         """Fill the table with discovered files."""
         self.clear()
+
+        # Hide empty state
+        self._empty_label.pack_forget()
+        self._empty_sublabel.pack_forget()
+
+        # Add header
+        self._header = FileTableHeader(self)
+        self._header.pack(fill="x", pady=(0, 1))
+
         for i, f in enumerate(files):
             row = FileRow(self, f, i, on_toggle=self._on_toggle)
             row.pack(fill="x", pady=1)
@@ -153,6 +215,9 @@ class FileTable(ctk.CTkScrollableFrame):
         for row in self._rows:
             row.destroy()
         self._rows.clear()
+        if self._header:
+            self._header.destroy()
+            self._header = None
 
     def set_all_included(self, included: bool):
         for row in self._rows:

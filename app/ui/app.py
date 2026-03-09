@@ -4,6 +4,8 @@ Orchestrates discovery, validation, conversion, and combining.
 """
 
 import os
+import platform
+import subprocess
 import tempfile
 import threading
 
@@ -87,20 +89,6 @@ class CombinerApp(ctk.CTk):
             command=self._open_settings,
         ).pack(side="right", padx=(PAD_SM, 0))
 
-        # Theme toggle
-        self._theme_btn = ctk.CTkButton(
-            header,
-            text="Light" if self.config.theme == "dark" else "Dark",
-            width=60,
-            height=30,
-            font=FONTS["small"],
-            fg_color="transparent",
-            text_color=theme["text_muted"],
-            hover_color=theme["bg_hover"],
-            command=self._toggle_theme,
-        )
-        self._theme_btn.pack(side="right")
-
         # ── Folder selector ──
         folder_frame = ctk.CTkFrame(main, fg_color="transparent")
         folder_frame.pack(fill="x", pady=(0, PAD_SM))
@@ -167,7 +155,7 @@ class CombinerApp(ctk.CTk):
         # ── Combine button ──
         self._combine_btn = ctk.CTkButton(
             main,
-            text="COMBINE",
+            text="Combine Files",
             height=48,
             font=(FONTS["subheading"][0], 15, "bold"),
             fg_color=theme["accent"],
@@ -179,7 +167,7 @@ class CombinerApp(ctk.CTk):
         self._combine_btn.configure(state="disabled")
 
         # ── Status bar ──
-        self._status_var = ctk.StringVar(value="Select a folder to begin")
+        self._status_var = ctk.StringVar(value="Select a folder above to get started")
         ctk.CTkLabel(
             main,
             textvariable=self._status_var,
@@ -348,12 +336,8 @@ class CombinerApp(ctk.CTk):
 
         # Check for overwrite
         if self._output_panel.check_overwrite():
-            dialog = ctk.CTkInputDialog(
-                text="Output file already exists. Type 'overwrite' to confirm:",
-                title="Confirm Overwrite",
-            )
-            response = dialog.get_input()
-            if response != "overwrite":
+            filename = os.path.basename(self._output_panel.get_output_path())
+            if not self._confirm_overwrite(filename):
                 return
 
         self._is_processing = True
@@ -365,6 +349,65 @@ class CombinerApp(ctk.CTk):
             args=(included,),
             daemon=True,
         ).start()
+
+    def _confirm_overwrite(self, filename: str) -> bool:
+        """Show a Replace/Cancel dialog. Returns True if user chose Replace."""
+        theme = COLORS.get(ctk.get_appearance_mode().lower(), COLORS["dark"])
+        result = {"confirmed": False}
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("File already exists")
+        dialog.geometry("380x150")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(fg_color=theme["bg_primary"])
+
+        frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=PAD_LG, pady=PAD_LG)
+
+        ctk.CTkLabel(
+            frame,
+            text=f"{filename} already exists.\nReplace it?",
+            font=FONTS["body"],
+            text_color=theme["text_primary"],
+            justify="center",
+        ).pack(pady=(0, PAD_LG))
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack()
+
+        def on_replace():
+            result["confirmed"] = True
+            dialog.destroy()
+
+        ctk.CTkButton(
+            btn_frame, text="Cancel", width=100, height=36,
+            fg_color=theme["bg_surface"], hover_color=theme["bg_hover"],
+            text_color=theme["text_primary"], command=dialog.destroy,
+        ).pack(side="left", padx=(0, PAD_SM))
+
+        ctk.CTkButton(
+            btn_frame, text="Replace", width=100, height=36,
+            fg_color=theme["accent"], hover_color=theme["accent_hover"],
+            command=on_replace,
+        ).pack(side="left")
+
+        dialog.wait_window()
+        return result["confirmed"]
+
+    @staticmethod
+    def _open_folder(folder_path: str):
+        """Open a folder in the system file manager."""
+        try:
+            if platform.system() == "Windows":
+                os.startfile(folder_path)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", folder_path])
+            else:
+                subprocess.Popen(["xdg-open", folder_path])
+        except Exception:
+            pass  # Silently fail if can't open
 
     def _run_pipeline(self, files):
         try:
@@ -488,7 +531,7 @@ class CombinerApp(ctk.CTk):
         theme = COLORS.get(ctk.get_appearance_mode().lower(), COLORS["dark"])
         dialog = ctk.CTkToplevel(self)
         dialog.title("Success")
-        dialog.geometry("380x180")
+        dialog.geometry("380x200")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -519,15 +562,30 @@ class CombinerApp(ctk.CTk):
                 text_color=theme["text_secondary"],
             ).pack(pady=(0, PAD_MD))
 
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack()
+
+        output_dir = os.path.dirname(output_path)
         ctk.CTkButton(
-            frame,
+            btn_frame,
+            text="Open Folder",
+            width=110,
+            height=36,
+            fg_color=theme["bg_surface"],
+            hover_color=theme["bg_hover"],
+            text_color=theme["text_primary"],
+            command=lambda: (self._open_folder(output_dir), dialog.destroy()),
+        ).pack(side="left", padx=(0, PAD_SM))
+
+        ctk.CTkButton(
+            btn_frame,
             text="OK",
             width=100,
             height=36,
             fg_color=theme["accent"],
             hover_color=theme["accent_hover"],
             command=dialog.destroy,
-        ).pack()
+        ).pack(side="left")
 
     def _classify_error(self, message: str):
         """Return (title, body, suggestion) based on error content."""
@@ -663,7 +721,7 @@ class CombinerApp(ctk.CTk):
         theme = COLORS.get(ctk.get_appearance_mode().lower(), COLORS["dark"])
         dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        dialog.geometry("500x220")
+        dialog.geometry("500x310")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -679,7 +737,7 @@ class CombinerApp(ctk.CTk):
             text_color=theme["text_primary"],
         ).pack(anchor="w", pady=(0, PAD_MD))
 
-        # Editor path section
+        # ── Editor path section ──
         ctk.CTkLabel(
             frame,
             text="Wings / My Editor path",
@@ -691,14 +749,13 @@ class CombinerApp(ctk.CTk):
         path_frame.pack(fill="x", pady=(0, PAD_SM))
 
         editor_var = ctk.StringVar(value=self.config.editor_path)
-        path_entry = ctk.CTkEntry(
+        ctk.CTkEntry(
             path_frame,
             textvariable=editor_var,
             height=36,
             font=FONTS["body"],
             placeholder_text="Auto-detect (leave empty)",
-        )
-        path_entry.pack(side="left", fill="x", expand=True, padx=(0, PAD_SM))
+        ).pack(side="left", fill="x", expand=True, padx=(0, PAD_SM))
 
         def browse_editor():
             path = ctk.filedialog.askopenfilename(
@@ -729,40 +786,67 @@ class CombinerApp(ctk.CTk):
             status_text = "Not detected — set path manually or install Wings/My Editor"
             status_color = theme["text_muted"]
 
-        status_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             frame,
             text=status_text,
             font=FONTS["tiny"],
             text_color=status_color,
-        )
-        status_label.pack(anchor="w", pady=(0, PAD_MD))
+        ).pack(anchor="w", pady=(0, PAD_MD))
 
-        # Save button
+        # ── Theme section ──
+        theme_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        theme_frame.pack(fill="x", pady=(0, PAD_MD))
+
+        ctk.CTkLabel(
+            theme_frame,
+            text="Theme",
+            font=FONTS["small"],
+            text_color=theme["text_secondary"],
+        ).pack(side="left", padx=(0, PAD_SM))
+
+        theme_var = ctk.StringVar(value=self.config.theme.capitalize())
+        theme_menu = ctk.CTkOptionMenu(
+            theme_frame,
+            values=["Dark", "Light"],
+            variable=theme_var,
+            width=100,
+            height=32,
+            font=FONTS["body"],
+            fg_color=theme["bg_surface"],
+            button_color=theme["bg_hover"],
+            button_hover_color=theme["accent"],
+        )
+        theme_menu.pack(side="left")
+
+        # ── Footer: version + save ──
+        footer = ctk.CTkFrame(frame, fg_color="transparent")
+        footer.pack(fill="x", side="bottom")
+
+        ctk.CTkLabel(
+            footer,
+            text=f"{APP_NAME} v{APP_VERSION}",
+            font=FONTS["tiny"],
+            text_color=theme["text_muted"],
+        ).pack(side="left")
+
         def save_settings():
             self.config.editor_path = editor_var.get().strip()
+            new_theme = theme_var.get().lower()
+            if new_theme != self.config.theme:
+                self.config.theme = new_theme
+                ctk.set_appearance_mode(new_theme)
             self.config.save()
             dialog.destroy()
 
         ctk.CTkButton(
-            frame,
+            footer,
             text="Save",
             width=100,
             height=36,
             fg_color=theme["accent"],
             hover_color=theme["accent_hover"],
             command=save_settings,
-        ).pack(anchor="e")
-
-    # ── Theme toggle ──
-
-    def _toggle_theme(self):
-        new_theme = "light" if self.config.theme == "dark" else "dark"
-        self.config.theme = new_theme
-        self.config.save()
-        ctk.set_appearance_mode(new_theme)
-        self._theme_btn.configure(
-            text="Light" if new_theme == "dark" else "Dark"
-        )
+        ).pack(side="right")
 
     # ── Window close ──
 
