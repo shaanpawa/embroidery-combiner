@@ -18,20 +18,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyembroidery olefile customtkinter pywinauto "nuitka[onefile]"
+          pip install pyembroidery olefile customtkinter pywinauto pyinstaller
 
-      - name: Find customtkinter path
-        id: ctk
+      - name: Build EXE with PyInstaller
         run: |
-          $ctkPath = python -c "import customtkinter, os; print(os.path.dirname(customtkinter.__file__))"
-          echo "path=$ctkPath" >> $env:GITHUB_OUTPUT
-
-      - name: Build EXE with Nuitka
-        run: |
-          python -m nuitka --assume-yes-for-downloads --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --include-package=customtkinter --include-data-dir="${{ steps.ctk.outputs.path }}=customtkinter" --output-filename=EmbroideryC.exe --company-name="FM Embroidery" --product-name="Embroidery Combiner" --file-version=1.0.0 --product-version=1.0.0 main.py
+          pyinstaller --onefile --noconsole --name EmbroideryC --collect-all customtkinter main.py
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
           name: EmbroideryC
-          path: EmbroideryC.exe
+          path: dist/EmbroideryC.exe
