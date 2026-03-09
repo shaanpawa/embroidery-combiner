@@ -10,7 +10,7 @@ import sys
 
 # Application constants
 APP_NAME = "Embroidery Combiner"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 SUPPORTED_EXTENSIONS = {'.ngs', '.dst'}
 
@@ -42,6 +42,7 @@ class Config:
         self.gap_mm: float = DEFAULT_GAP_MM
         self.theme: str = "dark"
         self.window_geometry: str = "720x680"
+        self.editor_path: str = ""  # Manual Wings/My Editor exe path
         self._path = os.path.join(_get_app_dir(), CONFIG_FILENAME)
 
     def load(self) -> None:
@@ -54,6 +55,7 @@ class Config:
             self.gap_mm = float(data.get("gap_mm", self.gap_mm))
             self.theme = data.get("theme", self.theme)
             self.window_geometry = data.get("window_geometry", self.window_geometry)
+            self.editor_path = data.get("editor_path", self.editor_path)
         except (json.JSONDecodeError, ValueError, OSError):
             pass  # Use defaults if config is corrupt
 
@@ -63,6 +65,7 @@ class Config:
             "gap_mm": self.gap_mm,
             "theme": self.theme,
             "window_geometry": self.window_geometry,
+            "editor_path": self.editor_path,
         }
         try:
             with open(self._path, 'w') as f:

@@ -70,10 +70,33 @@ _EDITOR_SEARCH = [
 ]
 
 
-def find_editor() -> Optional[EditorInfo]:
-    """Locate Wings XP or My Editor on the system. Returns the first one found."""
+def find_editor(manual_path: str = "") -> Optional[EditorInfo]:
+    """Locate Wings XP or My Editor on the system. Returns the first one found.
+
+    Args:
+        manual_path: User-specified exe path (from settings). Checked first.
+    """
     if not is_windows():
         return None
+
+    # Check user-specified path first
+    if manual_path and os.path.isfile(manual_path):
+        basename = os.path.basename(manual_path).lower()
+        for entry in _EDITOR_SEARCH:
+            if basename == entry["process_name"].lower():
+                return EditorInfo(
+                    name=entry["name"],
+                    exe_path=manual_path,
+                    process_name=entry["process_name"],
+                    window_title_re=entry["window_title_re"],
+                )
+        # Unknown exe name but user chose it — treat as Wings XP
+        return EditorInfo(
+            name="Wings (manual)",
+            exe_path=manual_path,
+            process_name=os.path.basename(manual_path),
+            window_title_re=".*Wings.*|.*Editor.*",
+        )
 
     import shutil as sh
 
@@ -108,9 +131,12 @@ def find_my_editor() -> Optional[str]:
     return info.exe_path if info else None
 
 
-def check_conversion_capability() -> Tuple[bool, str]:
+def check_conversion_capability(manual_path: str = "") -> Tuple[bool, str]:
     """
     Check if this system can convert NGS files.
+
+    Args:
+        manual_path: User-specified editor exe path from settings.
 
     Returns:
         (capable, message) — capable is True if conversion is possible.
@@ -126,13 +152,13 @@ def check_conversion_capability() -> Tuple[bool, str]:
             "4. Use this tool to combine them"
         )
 
-    editor = find_editor()
+    editor = find_editor(manual_path)
     if editor is None:
         return False, (
             "Wings XP or My Editor not found.\n\n"
             "Install Wings My Editor (free) from:\n"
             "https://www.wingssystems.com/index.php/products/myeditor/\n\n"
-            "After installing, restart this application."
+            "Or go to Settings and locate the .exe file manually."
         )
 
     return True, f"{editor.name} found: {editor.exe_path}"

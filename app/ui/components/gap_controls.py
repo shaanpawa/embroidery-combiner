@@ -118,6 +118,9 @@ class GapControls(ctk.CTkFrame):
             if val < 0:
                 val = 0
                 self._gap_var.set("0")
+            elif val > 50:
+                val = 50
+                self._gap_var.set("50")
             self._highlight_matching_preset(val)
             if self._on_change:
                 self._on_change(val)
@@ -127,7 +130,7 @@ class GapControls(ctk.CTkFrame):
     def get_gap_mm(self) -> float:
         try:
             val = float(self._gap_var.get())
-            return max(0.0, val)
+            return max(0.0, min(50.0, val))
         except ValueError:
             return DEFAULT_GAP_MM
 

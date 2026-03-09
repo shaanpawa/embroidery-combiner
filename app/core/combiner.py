@@ -37,6 +37,7 @@ def combine_designs(
     if not dst_files:
         raise CombineError("No files to combine")
 
+    gap_mm = max(0.0, min(50.0, gap_mm))
     gap = gap_mm * 10  # pyembroidery uses 1/10mm units
 
     try:

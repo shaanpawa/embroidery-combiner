@@ -17,10 +17,12 @@ from app.core.validator import validate_batch, is_valid_for_combining
 from app.core.combiner import (
     CombineError, combine_designs, save_combined, validate_combined_output,
 )
+from app.config import SUPPORTED_EXTENSIONS
 from app.core.converter import (
     check_conversion_capability, batch_convert, cleanup_temp_files,
+    find_editor,
 )
-from app.ui.theme import COLORS, FONTS, PAD_SM, PAD_MD, PAD_LG, PAD_XL, RADIUS_MD
+from app.ui.theme import COLORS, FONTS, PAD_SM, PAD_MD, PAD_LG, PAD_XL, RADIUS_MD, RADIUS_SM
 from app.ui.components.file_table import FileTable
 from app.ui.components.gap_controls import GapControls
 from app.ui.components.output_panel import OutputPanel
@@ -71,6 +73,19 @@ class CombinerApp(ctk.CTk):
             font=FONTS["heading"],
             text_color=theme["text_primary"],
         ).pack(side="left")
+
+        # Settings button
+        ctk.CTkButton(
+            header,
+            text="Settings",
+            width=70,
+            height=30,
+            font=FONTS["small"],
+            fg_color="transparent",
+            text_color=theme["text_muted"],
+            hover_color=theme["bg_hover"],
+            command=self._open_settings,
+        ).pack(side="right", padx=(PAD_SM, 0))
 
         # Theme toggle
         self._theme_btn = ctk.CTkButton(
@@ -193,13 +208,27 @@ class CombinerApp(ctk.CTk):
         result = self._discovery
 
         if not result.files:
-            msg = "No embroidery files found"
-            if result.skipped_files:
-                msg += f" ({len(result.skipped_files)} non-embroidery files ignored)"
-            self._status_var.set(msg)
             self._file_table.clear()
-            self._alerts.clear()
             self._combine_btn.configure(state="disabled")
+
+            # Show what was found instead
+            if result.skipped_files:
+                exts = set()
+                for sf in result.skipped_files:
+                    ext = os.path.splitext(sf)[1].lower()
+                    if ext:
+                        exts.add(ext)
+                ext_list = ", ".join(sorted(exts)) if exts else "unknown"
+                self._alerts.set_alerts([
+                    ("warning", f"No embroidery files found. Only .ngs and .dst files are supported."),
+                    ("info", f"Found {len(result.skipped_files)} other file(s) ({ext_list})"),
+                ])
+                self._status_var.set("No supported files in this folder")
+            else:
+                self._alerts.set_alerts([
+                    ("warning", "This folder is empty — no files found."),
+                ])
+                self._status_var.set("Empty folder")
             return
 
         # Populate file table
@@ -207,6 +236,17 @@ class CombinerApp(ctk.CTk):
 
         # Show alerts
         alerts = []
+
+        # Show skipped/unsupported files info
+        if result.skipped_files:
+            exts = set()
+            for sf in result.skipped_files:
+                ext = os.path.splitext(sf)[1].lower()
+                if ext:
+                    exts.add(ext)
+            ext_list = ", ".join(sorted(exts)) if exts else "other"
+            alerts.append(("info", f"Ignored {len(result.skipped_files)} file(s) ({ext_list}) — only .ngs and .dst supported"))
+
         for w in result.warnings:
             if "Missing" in w or "Duplicate" in w:
                 alerts.append(("warning", w))
@@ -342,7 +382,7 @@ class CombinerApp(ctk.CTk):
 
             # ── Phase 1: Convert NGS → DST ──
             if ngs_files:
-                capable, msg = check_conversion_capability()
+                capable, msg = check_conversion_capability(self.config.editor_path)
                 if not capable:
                     self.after(0, lambda: self._pipeline_error(msg))
                     return
@@ -489,16 +529,77 @@ class CombinerApp(ctk.CTk):
             command=dialog.destroy,
         ).pack()
 
+    def _classify_error(self, message: str):
+        """Return (title, body, suggestion) based on error content."""
+        msg_lower = message.lower()
+
+        if "permission denied" in msg_lower or "errno 13" in msg_lower:
+            return (
+                "Permission Denied",
+                message,
+                "Check that the file is not open in another program and you have read/write access.",
+            )
+        if "disk full" in msg_lower or "no space" in msg_lower or "errno 28" in msg_lower:
+            return (
+                "Disk Full",
+                message,
+                "Free up disk space and try again.",
+            )
+        if "not found" in msg_lower and ("wings" in msg_lower or "editor" in msg_lower):
+            return (
+                "Wings Editor Not Found",
+                message,
+                "Go to Settings to locate Wings XP or My Editor manually.",
+            )
+        if "ngs conversion requires windows" in msg_lower:
+            return (
+                "Windows Required",
+                "NGS files can only be converted on Windows.",
+                "Convert your .ngs files to .dst on a Windows machine first, then combine them here.",
+            )
+        if "no valid files" in msg_lower or "no files to combine" in msg_lower:
+            return (
+                "Nothing to Combine",
+                message,
+                "Make sure the folder contains valid .ngs or .dst embroidery files.",
+            )
+        if "cannot read" in msg_lower or "failed to read" in msg_lower:
+            return (
+                "Cannot Read File",
+                message,
+                "The file may be corrupted or in use by another program.",
+            )
+        if "empty" in msg_lower and ("0 bytes" in msg_lower or "empty:" in msg_lower):
+            return (
+                "Empty or Corrupt File",
+                message,
+                "This file appears to be empty or damaged. Try re-exporting it from the original software.",
+            )
+        if "already exists" in msg_lower:
+            return (
+                "File Already Exists",
+                message,
+                "The output file already exists. Delete it or choose a different name.",
+            )
+        # Generic fallback
+        return (
+            "Error",
+            message,
+            "If this keeps happening, try restarting the application.",
+        )
+
     def _pipeline_error(self, message: str):
         self._is_processing = False
         self._progress.hide()
         self._combine_btn.configure(state="normal")
-        self._status_var.set(f"Error: {message}")
+
+        title, body, suggestion = self._classify_error(message)
+        self._status_var.set(f"Error: {title}")
 
         theme = COLORS.get(ctk.get_appearance_mode().lower(), COLORS["dark"])
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Error")
-        dialog.geometry("400x200")
+        dialog.title(title)
+        dialog.geometry("440x240")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -509,21 +610,44 @@ class CombinerApp(ctk.CTk):
 
         ctk.CTkLabel(
             frame,
-            text="Something went wrong",
+            text=title,
             font=FONTS["subheading"],
             text_color=theme["error"],
         ).pack(pady=(0, PAD_SM))
 
         ctk.CTkLabel(
             frame,
-            text=message,
+            text=body,
             font=FONTS["body"],
             text_color=theme["text_secondary"],
-            wraplength=340,
+            wraplength=380,
+        ).pack(pady=(0, PAD_SM), fill="x")
+
+        ctk.CTkLabel(
+            frame,
+            text=suggestion,
+            font=FONTS["small"],
+            text_color=theme["text_muted"],
+            wraplength=380,
         ).pack(pady=(0, PAD_MD), fill="x")
 
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack()
+
+        # Show "Open Settings" button for editor-not-found errors
+        if "settings" in suggestion.lower():
+            ctk.CTkButton(
+                btn_frame,
+                text="Open Settings",
+                width=110,
+                height=36,
+                fg_color=theme["accent"],
+                hover_color=theme["accent_hover"],
+                command=lambda: (dialog.destroy(), self._open_settings()),
+            ).pack(side="left", padx=(0, PAD_SM))
+
         ctk.CTkButton(
-            frame,
+            btn_frame,
             text="OK",
             width=100,
             height=36,
@@ -531,7 +655,103 @@ class CombinerApp(ctk.CTk):
             hover_color=theme["bg_hover"],
             text_color=theme["text_primary"],
             command=dialog.destroy,
-        ).pack()
+        ).pack(side="left")
+
+    # ── Settings ──
+
+    def _open_settings(self):
+        theme = COLORS.get(ctk.get_appearance_mode().lower(), COLORS["dark"])
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Settings")
+        dialog.geometry("500x220")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(fg_color=theme["bg_primary"])
+
+        frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=PAD_LG, pady=PAD_LG)
+
+        ctk.CTkLabel(
+            frame,
+            text="Settings",
+            font=FONTS["subheading"],
+            text_color=theme["text_primary"],
+        ).pack(anchor="w", pady=(0, PAD_MD))
+
+        # Editor path section
+        ctk.CTkLabel(
+            frame,
+            text="Wings / My Editor path",
+            font=FONTS["small"],
+            text_color=theme["text_secondary"],
+        ).pack(anchor="w", pady=(0, PAD_SM))
+
+        path_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        path_frame.pack(fill="x", pady=(0, PAD_SM))
+
+        editor_var = ctk.StringVar(value=self.config.editor_path)
+        path_entry = ctk.CTkEntry(
+            path_frame,
+            textvariable=editor_var,
+            height=36,
+            font=FONTS["body"],
+            placeholder_text="Auto-detect (leave empty)",
+        )
+        path_entry.pack(side="left", fill="x", expand=True, padx=(0, PAD_SM))
+
+        def browse_editor():
+            path = ctk.filedialog.askopenfilename(
+                title="Locate Wings XP or My Editor",
+                filetypes=[("Executable", "*.exe"), ("All files", "*.*")],
+            )
+            if path:
+                editor_var.set(path)
+
+        ctk.CTkButton(
+            path_frame,
+            text="Browse",
+            width=80,
+            height=36,
+            font=FONTS["body"],
+            fg_color=theme["bg_surface"],
+            text_color=theme["text_primary"],
+            hover_color=theme["bg_hover"],
+            command=browse_editor,
+        ).pack(side="left")
+
+        # Show current detection status
+        editor = find_editor(self.config.editor_path)
+        if editor:
+            status_text = f"Detected: {editor.name} at {editor.exe_path}"
+            status_color = theme["success"]
+        else:
+            status_text = "Not detected — set path manually or install Wings/My Editor"
+            status_color = theme["text_muted"]
+
+        status_label = ctk.CTkLabel(
+            frame,
+            text=status_text,
+            font=FONTS["tiny"],
+            text_color=status_color,
+        )
+        status_label.pack(anchor="w", pady=(0, PAD_MD))
+
+        # Save button
+        def save_settings():
+            self.config.editor_path = editor_var.get().strip()
+            self.config.save()
+            dialog.destroy()
+
+        ctk.CTkButton(
+            frame,
+            text="Save",
+            width=100,
+            height=36,
+            fg_color=theme["accent"],
+            hover_color=theme["accent_hover"],
+            command=save_settings,
+        ).pack(anchor="e")
 
     # ── Theme toggle ──
 
