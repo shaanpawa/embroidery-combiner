@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.excel_parser import (
-    NameEntry, parse_excel, group_entries, generate_all_combos,
+    NameEntry, parse_excel, detect_columns, group_entries, generate_all_combos,
 )
 from app.core.pipeline import export_all
 from api.database import (
@@ -156,12 +156,13 @@ def _build_groups_response(entries, combos, groups) -> list:
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@app.post("/api/parse-excel")
-async def parse_excel_endpoint(
+@app.post("/api/detect-columns")
+async def detect_columns_endpoint(
     file: UploadFile = File(...),
     session_id: str = Form(None),
     user: dict = Depends(get_current_user),
 ):
+    """Upload Excel and auto-detect column mapping. Returns mapping + preview for confirmation."""
     sid, session = _ensure_session(session_id, user["email"])
 
     session_dir = get_session_dir(sid)
@@ -170,9 +171,57 @@ async def parse_excel_endpoint(
         content = await file.read()
         f.write(content)
 
-    result = parse_excel(excel_path)
+    update_session(sid, excel_filename=file.filename)
+
+    detection = detect_columns(excel_path)
+
+    return {
+        "session_id": sid,
+        "excel_filename": file.filename,
+        "headers": detection.headers,
+        "preview_rows": detection.preview_rows,
+        "detected_mapping": detection.detected_mapping,
+        "confidence": detection.confidence,
+    }
+
+
+@app.post("/api/parse-excel")
+async def parse_excel_endpoint(
+    file: UploadFile = File(None),
+    session_id: str = Form(None),
+    column_map: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    sid, session = _ensure_session(session_id, user["email"])
+
+    # Parse column_map if provided
+    cmap = None
+    if column_map:
+        try:
+            cmap = json.loads(column_map)
+            # Ensure all values are ints
+            cmap = {k: int(v) for k, v in cmap.items()}
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(400, "Invalid column_map JSON")
+
+    # If a new file is uploaded, save it. Otherwise use existing Excel in session.
+    session_dir = get_session_dir(sid)
+    if file:
+        excel_path = os.path.join(session_dir, file.filename or "order.xlsx")
+        with open(excel_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        update_session(sid, excel_filename=file.filename)
+    else:
+        # Find existing Excel file in session dir
+        excel_files = [f for f in os.listdir(session_dir) if f.endswith(('.xlsx', '.xls'))]
+        if not excel_files:
+            raise HTTPException(400, "No Excel file found. Upload a file or use detect-columns first.")
+        excel_path = os.path.join(session_dir, excel_files[0])
+
+    result = parse_excel(excel_path, column_map=cmap)
     if not result.entries:
-        update_session(sid, excel_filename=file.filename, entries_json=[], groups_json=[], combos_json=[])
+        update_session(sid, entries_json=[], groups_json=[], combos_json=[])
         return {"session_id": sid, "entries_count": 0, "groups": [], "combos": [], "warnings": result.warnings}
 
     groups = group_entries(result.entries)
@@ -184,7 +233,6 @@ async def parse_excel_endpoint(
 
     update_session(
         sid,
-        excel_filename=file.filename,
         entries_json=entries_data,
         groups_json=groups_data,
         combos_json=combos_data,

@@ -2,13 +2,38 @@
 Excel order parser for embroidery combo workflow.
 Reads an order Excel, groups names by (machine_program, com_no),
 expands quantities, and splits into combo files of max 20 slots.
+
+Supports auto-detection of column positions from headers.
 """
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from openpyxl import load_workbook
+
+# Default column indices (A=0, F=5, G=6, H=7, O=14, P=15)
+DEFAULT_COLUMN_MAP = {
+    "program": 0,
+    "name_line1": 5,
+    "name_line2": 6,
+    "quantity": 7,
+    "com_no": 14,
+    "machine_program": 15,
+}
+
+# Header patterns for auto-detection (lowercase). Order matters — first match wins.
+HEADER_PATTERNS = {
+    "program": ["program", "prog", "prg", "file number", "dst"],
+    "name_line1": ["row 1", "name 1", "first name", "embroidery name", "name"],
+    "name_line2": ["row 2", "name 2", "title", "subtitle", "organisation", "organization"],
+    "quantity": ["quantity", "qty", "amount", "count", "pcs"],
+    "com_no": ["com no", "combo no", "combo number", "combo", "com"],
+    "machine_program": ["machine program", "machine prog", "machine"],
+}
+
+# Fields where "M" alone is a valid header (special case — too short for fuzzy match)
+M_HEADER_FIELD = "machine_program"
 
 
 @dataclass
@@ -63,22 +88,123 @@ class ParseResult:
     warnings: List[str] = field(default_factory=list)
 
 
-def parse_excel(path: str) -> ParseResult:
-    """Read Excel, extract columns A/F/G/H/O/P, return ParseResult."""
+@dataclass
+class DetectResult:
+    headers: List[str]
+    preview_rows: List[List]
+    detected_mapping: Dict[str, int]
+    confidence: str  # "high" or "low"
+
+
+def detect_columns(path: str, preview_count: int = 5) -> DetectResult:
+    """Read Excel headers and auto-detect column mapping.
+
+    Returns headers, sample rows, detected mapping, and confidence level.
+    """
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        return DetectResult([], [], dict(DEFAULT_COLUMN_MAP), "low")
+
+    # Row 1 = headers
+    raw_headers = list(rows[0]) if rows else []
+    headers = [str(h or "").strip() for h in raw_headers]
+    headers_lower = [h.lower() for h in headers]
+
+    # Sample data rows (skip header)
+    preview_rows = []
+    for row in rows[1:preview_count + 1]:
+        preview_rows.append([_cell_to_json(c) for c in row])
+
+    # Auto-detect mapping
+    mapping: Dict[str, int] = {}
+    used_indices: set = set()
+
+    # Special case: header exactly "M" maps to machine_program
+    for i, h in enumerate(headers):
+        if h.strip() == "M" and M_HEADER_FIELD not in mapping:
+            mapping[M_HEADER_FIELD] = i
+            used_indices.add(i)
+            break
+
+    # Match each field by header patterns
+    for field_name, patterns in HEADER_PATTERNS.items():
+        if field_name in mapping:
+            continue  # already matched (e.g., machine_program via "M")
+        for pattern in patterns:
+            for i, h in enumerate(headers_lower):
+                if i in used_indices:
+                    continue
+                if pattern == h or (len(pattern) > 2 and pattern in h):
+                    # For "program", skip if this looks like a duplicate (column N often duplicates A)
+                    if field_name == "program" and i > 0 and "program" in mapping:
+                        continue
+                    mapping[field_name] = i
+                    used_indices.add(i)
+                    break
+            if field_name in mapping:
+                break
+
+    # Fill missing fields from defaults
+    all_fields = list(DEFAULT_COLUMN_MAP.keys())
+    matched = len(mapping)
+    for f in all_fields:
+        if f not in mapping:
+            mapping[f] = DEFAULT_COLUMN_MAP[f]
+
+    confidence = "high" if matched >= 5 else ("low" if matched < 3 else "medium")
+
+    return DetectResult(
+        headers=headers,
+        preview_rows=preview_rows,
+        detected_mapping=mapping,
+        confidence=confidence,
+    )
+
+
+def _cell_to_json(val):
+    """Convert a cell value to a JSON-safe type."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        if isinstance(val, float) and val == int(val):
+            return int(val)
+        return val
+    return str(val)
+
+
+def parse_excel(path: str, column_map: Optional[Dict[str, int]] = None) -> ParseResult:
+    """Read Excel and extract entries using column mapping.
+
+    If column_map is not provided, uses DEFAULT_COLUMN_MAP.
+    """
+    cmap = column_map or DEFAULT_COLUMN_MAP
+    idx_program = cmap["program"]
+    idx_name1 = cmap["name_line1"]
+    idx_name2 = cmap["name_line2"]
+    idx_qty = cmap["quantity"]
+    idx_com = cmap["com_no"]
+    idx_m = cmap["machine_program"]
+    max_idx = max(idx_program, idx_name1, idx_name2, idx_qty, idx_com, idx_m)
+
     wb = load_workbook(path, read_only=True, data_only=True)
     ws = wb.active
     result = ParseResult()
 
     for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        if len(row) < 16:
+        if len(row) <= max_idx:
             continue
 
-        program = row[0]   # A
-        name1 = row[5]     # F
-        name2 = row[6]     # G
-        qty = row[7]       # H
-        com_no = row[14]   # O
-        m_val = row[15]    # P
+        program = row[idx_program]
+        name1 = row[idx_name1]
+        name2 = row[idx_name2]
+        qty = row[idx_qty]
+        com_no = row[idx_com]
+        m_val = row[idx_m]
 
         if program is None or m_val is None:
             if program is not None or name1 is not None:

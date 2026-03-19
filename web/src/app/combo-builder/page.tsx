@@ -14,6 +14,8 @@ interface ComboFile { filename: string; part_number: number; total_parts: number
 interface Group { machine_program: string; com_no: string; entry_count: number; total_slots: number; combos: ComboFile[]; }
 interface EntryPreview { program: number; name_line1: string; name_line2: string; quantity: number; com_no: string; machine_program: string; }
 interface ParseResponse { session_id: string; entries_count: number; total_slots: number; groups: Group[]; combo_count: number; warnings: string[]; entries_preview?: EntryPreview[]; }
+interface DetectResponse { session_id: string; excel_filename: string; headers: string[]; preview_rows: (string | number | null)[][]; detected_mapping: Record<string, number>; confidence: string; }
+const FIELD_LABELS: Record<string, string> = { program: "Program", name_line1: "Name", name_line2: "Title", quantity: "Quantity", com_no: "Combo No", machine_program: "Machine" };
 interface DstResponse { session_id: string; uploaded_count: number; needed_count: number; missing_programs: number[]; all_matched: boolean; }
 interface SessionSummary { session_id: string; name: string; created_at: string; updated_at: string; has_excel: boolean; entries_count: number; combo_count: number; dst_count: number; exported: boolean; }
 interface FullSession {
@@ -105,6 +107,9 @@ export default function ComboBuilder() {
   const [showExcelPreview, setShowExcelPreview] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
+  const [detectData, setDetectData] = useState<DetectResponse | null>(null);
+  const [columnMapping, setColumnMapping] = useState<Record<string, number>>({});
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [gapMm, setGapMm] = useState(3);
   const [columnGapMm, setColumnGapMm] = useState(5);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +134,7 @@ export default function ComboBuilder() {
   }, []);
 
   const resetSession = useCallback(() => {
+    setDetectData(null); setColumnMapping({}); setMappingConfirmed(false);
     setDstUploaded(false); setDstData(null); setDstFileName("");
     setSelectedCombos(new Set()); setExpandedGroups(new Set());
     setPreviewCombo(null); setDownloadUrl(""); setExportProgress(0);
@@ -278,20 +284,38 @@ export default function ComboBuilder() {
     setSessionId(""); // Force new server session
     setExcelLoading(true); setExcelFile(file.name);
     const form = new FormData(); form.append("file", file);
-    // Don't send old sessionId — always create fresh session for new Excel
+    try {
+      const res = await authFetch(`${API}/api/detect-columns`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data: DetectResponse = await res.json();
+      setDetectData(data);
+      setColumnMapping(data.detected_mapping);
+      setSessionId(data.session_id);
+      saveSessionName(data.session_id, sessionName);
+      fetchSessions();
+    } catch (e) { showToast(`Failed to read Excel: ${e instanceof Error ? e.message : "Connection error"}`); setExcelFile(""); }
+    setExcelLoading(false);
+  }, [sessionId, resetSession, showToast, sessionName, saveSessionName, fetchSessions]);
+
+  const confirmMapping = useCallback(async () => {
+    if (!sessionId || !detectData) return;
+    setExcelLoading(true);
+    const form = new FormData();
+    form.append("session_id", sessionId);
+    form.append("column_map", JSON.stringify(columnMapping));
     try {
       const res = await authFetch(`${API}/api/parse-excel`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       if (data.entries_count === 0) {
-        showToast("No valid entries found. Expected columns: A (Program), F (Name), H (Qty), O (Com No), P (Machine Program)", "warning");
-        setExcelFile("");
+        showToast("No valid entries found with this column mapping. Try adjusting the columns.", "warning");
       } else {
+        setMappingConfirmed(true);
         applyParseData(data);
       }
-    } catch (e) { showToast(`Failed to parse Excel: ${e instanceof Error ? e.message : "Connection error"}`); setExcelFile(""); }
+    } catch (e) { showToast(`Failed to parse Excel: ${e instanceof Error ? e.message : "Connection error"}`); }
     setExcelLoading(false);
-  }, [sessionId, applyParseData, resetSession, showToast]);
+  }, [sessionId, detectData, columnMapping, applyParseData, showToast]);
 
   const uploadDst = useCallback(async (files: FileList | File[]) => {
     if (!sessionId) { showToast("Upload an Excel order first"); return; }
@@ -663,6 +687,58 @@ export default function ComboBuilder() {
             : <div><svg className="mx-auto mb-2.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">DST Programs</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? "Drop folder or click to browse .zip" : "Upload Excel first"}</p></div>}
           </div>
         </div>
+
+        {/* Column Mapping Confirmation */}
+        {detectData && !mappingConfirmed && (
+          <div className="glass-panel p-4 sm:p-5" style={{ animation: "fadeSlideIn 0.3s ease" }}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-xs font-semibold">Column Mapping</h3>
+                <p className="text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
+                  {detectData.confidence === "high" ? "Auto-detected columns — verify and confirm" : "Some columns need manual selection"}
+                </p>
+              </div>
+              {detectData.confidence !== "high" && (
+                <span className="text-[9px] font-medium px-2 py-1 rounded-md" style={{ background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)" }}>Needs review</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {Object.entries(FIELD_LABELS).map(([field, label]) => {
+                const colIdx = columnMapping[field] ?? -1;
+                const header = colIdx >= 0 && colIdx < detectData.headers.length ? detectData.headers[colIdx] : "—";
+                const samples = detectData.preview_rows.slice(0, 3).map(r => colIdx >= 0 && colIdx < r.length ? r[colIdx] : null).filter(v => v !== null).map(v => String(v));
+                return (
+                  <div key={field} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "var(--surface)" }}>
+                    <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "var(--accent)" }}>{label}</span>
+                    <select
+                      className="flex-1 text-[10px] px-2 py-1.5 rounded-lg bg-transparent min-w-0"
+                      style={{ border: "1px solid var(--border)", color: "var(--foreground)" }}
+                      value={colIdx}
+                      onChange={(e) => setColumnMapping(prev => ({ ...prev, [field]: parseInt(e.target.value) }))}
+                    >
+                      <option value={-1}>— select —</option>
+                      {detectData.headers.map((h, i) => h && (
+                        <option key={i} value={i}>{String.fromCharCode(65 + i)} — {h}</option>
+                      ))}
+                    </select>
+                    <span className="text-[9px] truncate max-w-[80px] hidden sm:inline" style={{ color: "var(--muted)" }} title={samples.join(", ")}>
+                      {samples.slice(0, 2).join(", ") || "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end mt-3">
+              <button
+                className="accent-btn text-xs"
+                onClick={confirmMapping}
+                disabled={excelLoading || Object.values(columnMapping).some(v => v < 0)}
+              >
+                {excelLoading ? "Parsing..." : "Confirm & Parse"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Excel Preview (collapsible) */}
         {parseData?.entries_preview && parseData.entries_preview.length > 0 && (
