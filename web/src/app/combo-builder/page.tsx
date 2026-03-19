@@ -3,7 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "../theme-provider";
+import { authFetch } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -72,6 +74,7 @@ function formatDate(iso: string): string {
 
 export default function ComboBuilder() {
   const { theme, toggle } = useTheme();
+  const { data: session } = useSession();
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [sessionName, setSessionName] = useState(
@@ -101,6 +104,7 @@ export default function ComboBuilder() {
   const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "success" } | null>(null);
   const [showExcelPreview, setShowExcelPreview] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMobilePreview, setShowMobilePreview] = useState(false);
   const [gapMm, setGapMm] = useState(3);
   const [columnGapMm, setColumnGapMm] = useState(5);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -110,7 +114,7 @@ export default function ComboBuilder() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/sessions`);
+      const res = await authFetch(`${API}/api/sessions`);
       if (res.ok) setSavedSessions(await res.json());
     } catch { /* ignore */ }
   }, []);
@@ -121,7 +125,7 @@ export default function ComboBuilder() {
   // Save session name to server when it changes
   const saveSessionName = useCallback(async (sid: string, name: string) => {
     const form = new FormData(); form.append("session_id", sid); form.append("name", name);
-    try { await fetch(`${API}/api/session/name`, { method: "POST", body: form }); } catch { /* ignore */ }
+    try { await authFetch(`${API}/api/session/name`, { method: "POST", body: form }); } catch { /* ignore */ }
   }, []);
 
   const resetSession = useCallback(() => {
@@ -216,7 +220,7 @@ export default function ComboBuilder() {
   const loadFullSession = useCallback(async (sid: string) => {
     setLoadingSession(true);
     try {
-      const res = await fetch(`${API}/api/session/${sid}/full`);
+      const res = await authFetch(`${API}/api/session/${sid}/full`);
       if (!res.ok) throw new Error(`Failed to load session: ${res.status}`);
       const data: FullSession = await res.json();
       applyFullSession(data);
@@ -229,7 +233,7 @@ export default function ComboBuilder() {
 
   const deleteSession = useCallback(async (sid: string) => {
     try {
-      const res = await fetch(`${API}/api/session/${sid}`, { method: "DELETE" });
+      const res = await authFetch(`${API}/api/session/${sid}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       showToast("Session deleted", "success");
       fetchSessions();
@@ -250,7 +254,7 @@ export default function ComboBuilder() {
   const removeExcel = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const res = await fetch(`${API}/api/session/${sessionId}/excel`, { method: "DELETE" });
+      const res = await authFetch(`${API}/api/session/${sessionId}/excel`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove Excel");
       setExcelFile("");
       setParseData(null);
@@ -276,7 +280,7 @@ export default function ComboBuilder() {
     const form = new FormData(); form.append("file", file);
     // Don't send old sessionId — always create fresh session for new Excel
     try {
-      const res = await fetch(`${API}/api/parse-excel`, { method: "POST", body: form });
+      const res = await authFetch(`${API}/api/parse-excel`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       if (data.entries_count === 0) {
@@ -302,7 +306,7 @@ export default function ComboBuilder() {
     if (isZip) { form.append("zip_file", fileArr[0]); setDstFileName(fileArr[0].name); }
     else { dstFiles.forEach((f) => form.append("files", f)); setDstFileName(`${dstFiles.length} DST files`); }
     try {
-      const res = await fetch(`${API}/api/upload-dst`, { method: "POST", body: form });
+      const res = await authFetch(`${API}/api/upload-dst`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data: DstResponse = await res.json();
       setDstData(data); setDstUploaded(true);
@@ -331,7 +335,7 @@ export default function ComboBuilder() {
       setExportProgress(Math.round(progress));
     }, 1000);
     try {
-      const res = await fetch(`${API}/api/export`, { method: "POST", body: form });
+      const res = await authFetch(`${API}/api/export`, { method: "POST", body: form });
       clearInterval(progressInterval);
       if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
       setExportProgress(90);
@@ -350,7 +354,7 @@ export default function ComboBuilder() {
   const loadSampleData = useCallback(async () => {
     setExcelLoading(true); resetSession();
     try {
-      const res = await fetch(`${API}/api/dev/load-sample`);
+      const res = await authFetch(`${API}/api/dev/load-sample`);
       if (!res.ok) throw new Error("API not running on port 8000");
       const data = await res.json();
       setExcelFile("nameorder_04032026-2 add column.xlsx");
@@ -419,15 +423,15 @@ export default function ComboBuilder() {
           <Link href="/"><Image src="/micro-logo.svg" alt="Micro" width={56} height={16} className="micro-logo opacity-40 hover:opacity-70 transition-opacity" /></Link>
           <div className="flex-1" />
           <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
-          <div className="flex items-center gap-1.5">
+          <div className="hidden sm:flex items-center gap-1.5">
             <Image src="/ossia-mark.svg?v2" alt="" width={20} height={20} className="micro-logo" />
             <span className="text-sm font-bold" style={{ color: "var(--foreground)", letterSpacing: "-0.04em" }}>ossia</span>
           </div>
         </nav>
 
-        <div className="flex-1 flex flex-col items-center px-6 py-10 overflow-y-auto">
+        <div className="flex-1 flex flex-col items-center px-4 sm:px-6 py-6 sm:py-10 overflow-y-auto">
           <div className="max-w-lg w-full" style={{ animation: "slideUp 0.5s ease" }}>
-            <h1 className="text-3xl font-semibold tracking-tight mb-2" style={{ letterSpacing: "-0.03em" }}>Combo Builder</h1>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-2" style={{ letterSpacing: "-0.03em" }}>Combo Builder</h1>
             <p className="text-sm mb-8" style={{ color: "var(--muted)" }}>
               Create a new session to start combining embroidery name programs into production files.
             </p>
@@ -558,7 +562,7 @@ export default function ComboBuilder() {
             <>
               {/* Backdrop to close dropdown */}
               <div className="fixed inset-0 z-40" onClick={() => setShowSessionDropdown(false)} />
-              <div className="absolute top-full left-0 mt-1.5 py-1.5 min-w-[260px] z-50 rounded-xl overflow-hidden" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", border: "1px solid var(--glass-border)", boxShadow: "var(--shadow-float)", animation: "fadeSlideIn 0.15s ease" }}>
+              <div className="absolute top-full left-0 mt-1.5 py-1.5 min-w-[260px] max-w-[calc(100vw-2rem)] z-50 rounded-xl overflow-hidden" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", border: "1px solid var(--glass-border)", boxShadow: "var(--shadow-float)", animation: "fadeSlideIn 0.15s ease" }}>
                 {savedSessions.length > 0 && savedSessions.map((s) => (
                   <button
                     key={s.session_id}
@@ -603,14 +607,26 @@ export default function ComboBuilder() {
           )}
         </div>
         <div className="flex-1" />
+        {session?.user && (
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="text-[11px] px-2.5 py-1.5 rounded-lg transition-colors"
+            style={{ color: "var(--muted)", background: "transparent" }}
+            title={session.user.email || ""}
+          >
+            <span className="hidden sm:inline">{session.user.email}</span>
+            <span className="sm:hidden">{session.user.email?.charAt(0).toUpperCase()}</span>
+            <span className="ml-1.5" style={{ fontSize: "9px" }}>Sign out</span>
+          </button>
+        )}
         <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
-        <div className="flex items-center gap-1.5">
+        <div className="hidden sm:flex items-center gap-1.5">
           <Image src="/ossia-mark.svg?v2" alt="" width={20} height={20} className="micro-logo" />
           <span className="text-sm font-bold" style={{ color: "var(--foreground)", letterSpacing: "-0.04em" }}>ossia</span>
         </div>
       </nav>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-5 flex flex-col gap-4 min-h-0">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-5 flex flex-col gap-3 sm:gap-4 min-h-0">
         <div style={{ animation: "slideUp 0.4s ease" }}>
           <h1 className="text-2xl font-semibold tracking-tight" style={{ letterSpacing: "-0.02em" }}>Combo Builder</h1>
           <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Upload an Excel order and DST programs to generate combo files</p>
@@ -695,7 +711,7 @@ export default function ComboBuilder() {
               Settings
             </button>
             {showSettings && (
-              <div className="glass-panel p-4 flex gap-6" style={{ animation: "fadeSlideIn 0.2s ease" }}>
+              <div className="glass-panel p-4 flex flex-col sm:flex-row gap-3 sm:gap-6" style={{ animation: "fadeSlideIn 0.2s ease" }}>
                 <label className="flex items-center gap-2 text-[11px]">
                   <span style={{ color: "var(--muted)" }}>Vertical gap</span>
                   <input type="number" value={gapMm} onChange={(e) => setGapMm(Number(e.target.value))} min={0} max={20} step={0.5} className="w-14 text-center text-[11px] px-2 py-1 rounded-lg bg-transparent" style={{ border: "1px solid var(--border)", color: "var(--foreground)" }} />
@@ -713,13 +729,13 @@ export default function ComboBuilder() {
 
         {/* Pipeline Stats */}
         {parseData && (
-          <div className="flex items-center justify-center gap-3" style={{ animation: "slideUp 0.4s ease 0.1s forwards", opacity: 0, overflow: "visible", paddingTop: "12px" }}>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-center sm:gap-3" style={{ animation: "slideUp 0.4s ease 0.1s forwards", opacity: 0, overflow: "visible", paddingTop: "12px" }}>
             <StatCard value={parseData.entries_count} label="Names" description="Individual name entries from Excel" delay={0.05} />
-            <span className="stat-arrow">→</span>
+            <span className="stat-arrow hidden sm:block">→</span>
             <StatCard value={parseData.groups.length} label="Groups" description="Grouped by machine program + combo number" delay={0.1} />
-            <span className="stat-arrow">→</span>
+            <span className="stat-arrow hidden sm:block">→</span>
             <StatCard value={parseData.combo_count} label="Output Files" description="DST files to generate (max 20 names each)" delay={0.15} />
-            <span className="stat-arrow">→</span>
+            <span className="stat-arrow hidden sm:block">→</span>
             <StatCard value={parseData.total_slots} label="Slots" description="Total name positions across all files" delay={0.2} />
           </div>
         )}
@@ -727,7 +743,7 @@ export default function ComboBuilder() {
         {/* Two-Panel: Combo List + Slot Preview */}
         {parseData && parseData.groups.length > 0 && (
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3 min-h-0" style={{ animation: "slideUp 0.4s ease 0.15s forwards", opacity: 0 }}>
-            <div className="glass-panel overflow-hidden flex flex-col min-h-[300px]">
+            <div className="glass-panel overflow-hidden flex flex-col min-h-[200px] sm:min-h-[300px]">
               <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
                 <span className="text-xs font-semibold">Output Files <span className="font-normal" style={{ color: "var(--muted)" }}>{selectedCombos.size}/{totalCombos}</span></span>
                 <div className="flex gap-1"><button onClick={selectAll} className="glass-btn text-[10px]">All</button><button onClick={deselectAll} className="glass-btn text-[10px]">None</button></div>
@@ -739,20 +755,23 @@ export default function ComboBuilder() {
                   const sel = group.combos.filter((c) => selectedCombos.has(c.filename)).length;
                   return (
                     <div key={gk} style={{ borderBottom: "1px solid var(--border)" }}>
-                      <button className="w-full flex flex-col px-4 py-2.5 text-left transition-colors" style={{ background: exp ? "var(--surface)" : "transparent" }} onClick={() => toggleGroup(gk)}>
+                      <button className="w-full flex flex-col px-4 py-3 sm:py-2.5 text-left transition-colors" style={{ background: exp ? "var(--surface)" : "transparent" }} onClick={() => toggleGroup(gk)}>
                         <div className="flex items-center gap-2.5 w-full">
                           <span className="text-[10px] w-3" style={{ color: "var(--muted)" }}>{exp ? "▼" : "▶"}</span>
                           <span className="text-xs font-medium">{group.machine_program}<span style={{ color: "var(--muted)", fontWeight: 400 }}> / Combo {group.com_no}</span></span>
-                          <span className="text-[10px] ml-auto tabular-nums" style={{ color: "var(--muted)" }}>
+                          <span className="text-[10px] ml-auto tabular-nums hidden sm:inline" style={{ color: "var(--muted)" }}>
                             {group.entry_count} names → {group.combos.length} {group.combos.length === 1 ? "file" : "files"} ({group.total_slots} slots)
+                          </span>
+                          <span className="text-[10px] ml-auto tabular-nums sm:hidden" style={{ color: "var(--muted)" }}>
+                            {group.combos.length}f
                           </span>
                         </div>
                       </button>
                       {exp && group.combos.map((combo, ci) => (
-                        <div key={combo.filename} className="flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-all" style={{ background: previewCombo?.filename === combo.filename ? "var(--accent-glow)" : "var(--surface)", borderTop: "1px solid var(--border)", animation: `fadeSlideIn 0.15s ease ${ci * 0.02}s forwards`, opacity: 0 }} onClick={() => setPreviewCombo(combo)}>
+                        <div key={combo.filename} className="flex items-center gap-2.5 px-4 py-3 sm:py-2 cursor-pointer transition-all" style={{ background: previewCombo?.filename === combo.filename ? "var(--accent-glow)" : "var(--surface)", borderTop: "1px solid var(--border)", animation: `fadeSlideIn 0.15s ease ${ci * 0.02}s forwards`, opacity: 0 }} onClick={() => { setPreviewCombo(combo); setShowMobilePreview(true); }}>
                           <input type="checkbox" className="custom-checkbox" checked={selectedCombos.has(combo.filename)} onChange={() => toggleCombo(combo.filename)} onClick={(e) => e.stopPropagation()} />
                           <span className="text-[11px] font-mono">{combo.filename}</span>
-                          <span className="text-[10px] ml-auto tabular-nums" style={{ color: "var(--muted)" }}>{combo.left_count} left{combo.right_count > 0 ? ` + ${combo.right_count} right` : ""}</span>
+                          <span className="text-[10px] ml-auto tabular-nums" style={{ color: "var(--muted)" }}>{combo.left_count}L{combo.right_count > 0 ? ` + ${combo.right_count}R` : ""}</span>
                         </div>
                       ))}
                     </div>
@@ -761,7 +780,8 @@ export default function ComboBuilder() {
               </div>
             </div>
 
-            <div className="glass-panel p-4 overflow-y-auto custom-scroll lg:sticky lg:top-0 lg:self-start min-h-[300px]" style={{ maxHeight: "calc(100vh - 340px)" }}>
+            {/* Desktop preview sidebar */}
+            <div className="hidden lg:block glass-panel p-4 overflow-y-auto custom-scroll lg:sticky lg:top-0 lg:self-start min-h-[300px]" style={{ maxHeight: "calc(100vh - 340px)" }}>
               {previewCombo ? (
                 <>
                   <h3 className="text-[11px] font-semibold font-mono mb-3 pb-2" style={{ borderBottom: "1px solid var(--border)", color: "var(--accent)" }}>{previewCombo.filename}</h3>
@@ -801,12 +821,48 @@ export default function ComboBuilder() {
             </div>
           </div>
         )}
+
+        {/* Mobile preview overlay */}
+        {showMobilePreview && previewCombo && (
+          <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
+            <div className="absolute inset-0 bg-black/30" onClick={() => setShowMobilePreview(false)} />
+            <div className="relative glass-panel rounded-t-2xl p-4 overflow-y-auto" style={{ maxHeight: "65vh", animation: "slideUp 0.2s ease" }}>
+              <div className="flex items-center justify-between mb-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                <h3 className="text-[11px] font-semibold font-mono" style={{ color: "var(--accent)" }}>{previewCombo.filename}</h3>
+                <button onClick={() => setShowMobilePreview(false)} className="w-7 h-7 flex items-center justify-center rounded-lg" style={{ color: "var(--muted)", background: "var(--surface)" }}>✕</button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>Left Column</p>
+                  {previewCombo.slots.slice(0, 10).map((s, i) => (
+                    <div key={i} className="flex items-center gap-1 py-[2px]" style={{ borderBottom: "1px solid var(--border)" }}>
+                      <span className="text-[9px] w-3.5 text-right tabular-nums" style={{ color: "var(--border-strong)" }}>{i + 1}</span>
+                      <span className="text-[9px] font-mono w-6 tabular-nums" style={{ color: "var(--accent)" }}>{s.program}</span>
+                      <span className="text-[9px] truncate">{s.name_line1}</span>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>Right Column</p>
+                  {previewCombo.slots.slice(10).map((s, i) => (
+                    <div key={i} className="flex items-center gap-1 py-[2px]" style={{ borderBottom: "1px solid var(--border)" }}>
+                      <span className="text-[9px] w-3.5 text-right tabular-nums" style={{ color: "var(--border-strong)" }}>{i + 11}</span>
+                      <span className="text-[9px] font-mono w-6 tabular-nums" style={{ color: "var(--accent)" }}>{s.program}</span>
+                      <span className="text-[9px] truncate">{s.name_line1}</span>
+                    </div>
+                  ))}
+                  {previewCombo.right_count === 0 && <p className="text-[9px] py-2" style={{ color: "var(--border-strong)" }}>No right column</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Export Bar */}
       {parseData && (
-        <div className="shrink-0 px-6 py-3" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", borderTop: "1px solid var(--glass-border)", animation: "slideUp 0.3s ease 0.2s forwards", opacity: 0 }}>
-          <div className="max-w-6xl mx-auto flex items-center gap-4">
+        <div className="shrink-0 px-4 sm:px-6 py-3" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", borderTop: "1px solid var(--glass-border)", animation: "slideUp 0.3s ease 0.2s forwards", opacity: 0 }}>
+          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
             <div className="flex-1 min-w-0">
               {exporting && (
                 <div>
@@ -831,7 +887,7 @@ export default function ComboBuilder() {
               )}
               {!exporting && !downloadUrl && !exported && !dstUploaded && <p className="text-[11px]" style={{ color: "var(--muted)" }}>Upload DST files to enable export</p>}
             </div>
-            <button className="accent-btn" disabled={selectedCombos.size === 0 || !dstUploaded || exporting} onClick={handleExport}>
+            <button className="accent-btn w-full sm:w-auto" disabled={selectedCombos.size === 0 || !dstUploaded || exporting} onClick={handleExport}>
               {exporting ? "Exporting..." : `Export ${selectedCombos.size} File${selectedCombos.size !== 1 ? "s" : ""}`}
             </button>
           </div>
