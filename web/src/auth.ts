@@ -27,7 +27,9 @@ if (isPasswordConfigured) {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (credentials?.password === process.env.ADMIN_PASSWORD) {
+        const pw = typeof credentials?.password === "string" ? credentials.password : "";
+        const expected = process.env.ADMIN_PASSWORD || "";
+        if (pw && expected && pw === expected) {
           return { id: "operator", email: "operator@micro", name: "Operator" };
         }
         return null;
