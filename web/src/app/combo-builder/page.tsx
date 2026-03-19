@@ -640,8 +640,8 @@ export default function ComboBuilder() {
             : excelFile ? (
               <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
                 <div className="flex items-center justify-center gap-2">
-                  <span style={{ color: "var(--success)", fontSize: "16px" }}>✓</span>
-                  <span className="text-sm font-medium" style={{ color: "var(--success)" }}>{excelFile}</span>
+                  <span style={{ color: "var(--accent)", fontSize: "16px" }}>✓</span>
+                  <span className="text-sm font-medium" style={{ color: "var(--accent)" }}>{excelFile}</span>
                   <button
                     className="w-5 h-5 flex items-center justify-center rounded-md text-[10px] transition-colors"
                     style={{ color: "var(--muted)", background: "var(--surface)" }}
@@ -659,7 +659,7 @@ export default function ComboBuilder() {
           <div className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!sessionId ? "opacity-25 pointer-events-none" : ""}`} onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }} onDragLeave={() => setDstDragOver(false)} onDrop={handleDstDrop} onClick={() => sessionId && zipInputRef.current?.click()}>
             <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
             {dstLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>Uploading...</p>
-            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--success)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--success)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.uploaded_count}/{dstData.needed_count} programs matched{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} missing</span>}</p></div>
+            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.uploaded_count}/{dstData.needed_count} programs matched{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} missing</span>}</p></div>
             : <div><svg className="mx-auto mb-2.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">DST Programs</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? "Drop folder or click to browse .zip" : "Upload Excel first"}</p></div>}
           </div>
         </div>

@@ -4,9 +4,9 @@
 :root {
   --background: #f5f0eb;
   --foreground: #333334;
-  --accent: #2b5e49;
-  --accent-light: #3a7d62;
-  --accent-glow: rgba(43, 94, 73, 0.35);
+  --accent: #26397a;
+  --accent-light: #3450a0;
+  --accent-glow: rgba(38, 57, 122, 0.30);
   --border: rgba(51, 51, 52, 0.10);
   --border-strong: rgba(51, 51, 52, 0.20);
   --surface: rgba(51, 51, 52, 0.04);
@@ -22,7 +22,7 @@
   --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.03);
   --shadow-glass: 0 4px 24px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
   --shadow-glass-hover: 0 8px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  --mesh-1: rgba(43, 94, 73, 0.07);
+  --mesh-1: rgba(38, 57, 122, 0.07);
   --mesh-2: rgba(180, 140, 100, 0.06);
   --mesh-3: rgba(100, 140, 180, 0.05);
 }
@@ -31,9 +31,9 @@
 html[data-theme="dark"] {
   --background: #0c0c0c;
   --foreground: #e8e4e0;
-  --accent: #4ead8a;
-  --accent-light: #5cc49e;
-  --accent-glow: rgba(78, 173, 138, 0.3);
+  --accent: #6b8cdb;
+  --accent-light: #839ee6;
+  --accent-glow: rgba(107, 140, 219, 0.3);
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.15);
   --surface: rgba(255, 255, 255, 0.04);
@@ -46,7 +46,7 @@ html[data-theme="dark"] {
   --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-glass: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --shadow-glass-hover: 0 8px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --mesh-1: rgba(78, 173, 138, 0.06);
+  --mesh-1: rgba(107, 140, 219, 0.06);
   --mesh-2: rgba(140, 100, 60, 0.04);
   --mesh-3: rgba(60, 100, 160, 0.04);
 }
@@ -135,13 +135,13 @@ input:focus, textarea:focus, select:focus { outline: none; }
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 16px rgba(43, 94, 73, 0.25);
+  box-shadow: 0 4px 16px rgba(38, 57, 122, 0.25);
   letter-spacing: 0.01em;
 }
 .accent-btn:hover {
   background: var(--accent-light);
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(43, 94, 73, 0.35);
+  box-shadow: 0 8px 28px rgba(38, 57, 122, 0.35);
 }
 .accent-btn:active { transform: translateY(0); }
 .accent-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
@@ -176,12 +176,12 @@ input:focus, textarea:focus, select:focus { outline: none; }
 }
 .drop-zone:hover, .drop-zone.drag-over {
   border-color: var(--accent);
-  background: rgba(43, 94, 73, 0.06);
+  background: rgba(38, 57, 122, 0.06);
   box-shadow: 0 0 0 4px var(--accent-glow), var(--shadow-glass);
   transform: scale(1.01);
 }
 .drop-zone.has-file {
-  border-color: var(--success);
+  border-color: var(--accent);
   border-style: solid;
   background: var(--glass);
 }
