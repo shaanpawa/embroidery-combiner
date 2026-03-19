@@ -1,9 +1,10 @@
 import { auth } from "@/auth";
 
-// Skip auth entirely if Google OAuth is not configured
+// Auth is active when either Google OAuth or password is configured
 const isAuthConfigured =
-  process.env.GOOGLE_CLIENT_ID &&
-  process.env.GOOGLE_CLIENT_ID !== "replace-with-google-client-id";
+  (process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_ID !== "replace-with-google-client-id") ||
+  !!process.env.ADMIN_PASSWORD;
 
 export default auth((req) => {
   // If auth not configured, allow all requests (dev mode)

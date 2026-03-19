@@ -2,8 +2,9 @@ import { auth } from "@/auth";
 import { SignJWT } from "jose";
 
 const isAuthConfigured =
-  process.env.GOOGLE_CLIENT_ID &&
-  process.env.GOOGLE_CLIENT_ID !== "replace-with-google-client-id";
+  (process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_ID !== "replace-with-google-client-id") ||
+  !!process.env.ADMIN_PASSWORD;
 
 const secret = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "dev-secret-not-for-production"

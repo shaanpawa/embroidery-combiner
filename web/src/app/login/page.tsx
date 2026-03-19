@@ -2,13 +2,34 @@
 
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Image from "next/image";
 
 function LoginContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const callbackUrl = searchParams.get("callbackUrl") || "/";
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState(error);
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password.trim()) return;
+    setLoading(true);
+    setAuthError(null);
+    const result = await signIn("credentials", {
+      password,
+      redirect: false,
+      callbackUrl,
+    });
+    if (result?.error) {
+      setAuthError("CredentialsSignin");
+      setLoading(false);
+    } else if (result?.url) {
+      window.location.href = result.url;
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6">
@@ -59,7 +80,7 @@ function LoginContent() {
 
       {/* Sign-in card */}
       <div
-        className="glass-card p-10 w-full max-w-sm text-center"
+        className="glass-card p-8 sm:p-10 w-full max-w-sm text-center"
         style={{ animation: "slideUp 0.6s ease 0.1s forwards", opacity: 0 }}
       >
         <h1
@@ -68,50 +89,61 @@ function LoginContent() {
         >
           Welcome back
         </h1>
-        <p className="text-xs mb-8" style={{ color: "var(--muted)" }}>
+        <p className="text-xs mb-6" style={{ color: "var(--muted)" }}>
           Sign in to access Micro Automation
         </p>
 
         {/* Error message */}
-        {error && (
+        {authError && (
           <div
-            className="mb-6 px-4 py-3 rounded-xl text-xs font-medium"
+            className="mb-5 px-4 py-3 rounded-xl text-xs font-medium"
             style={{
               background: "rgba(220, 38, 38, 0.08)",
               color: "var(--danger)",
               border: "1px solid rgba(220, 38, 38, 0.15)",
             }}
           >
-            {error === "AccessDenied"
+            {authError === "AccessDenied"
               ? "Access denied. Your email may not be whitelisted."
+              : authError === "CredentialsSignin"
+              ? "Incorrect password. Please try again."
               : "Something went wrong. Please try again."}
           </div>
         )}
 
-        {/* Google sign-in button */}
+        {/* Password form */}
+        <form onSubmit={handlePasswordLogin} className="mb-4">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); setAuthError(null); }}
+            placeholder="Enter password"
+            className="w-full text-sm px-4 py-3 rounded-xl bg-transparent mb-3"
+            style={{ border: "1px solid var(--border)", color: "var(--foreground)" }}
+            autoFocus
+          />
+          <button
+            type="submit"
+            className="accent-btn w-full"
+            disabled={!password.trim() || loading}
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+
+        {/* Google sign-in (optional) */}
         <button
           onClick={() => signIn("google", { callbackUrl })}
-          className="glass-btn w-full flex items-center justify-center gap-3 py-3 px-5 text-sm font-medium"
+          className="glass-btn w-full flex items-center justify-center gap-3 py-3 px-5 text-xs"
           style={{
             borderRadius: "12px",
-            color: "var(--foreground)",
+            color: "var(--muted)",
             border: "1px solid var(--glass-border)",
             background: "var(--glass)",
             backdropFilter: "blur(12px)",
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--surface-hover)";
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.boxShadow = "var(--shadow-glass-hover)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "var(--glass)";
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.boxShadow = "none";
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24">
+          <svg width="16" height="16" viewBox="0 0 24 24">
             <path
               d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
               fill="#4285F4"
@@ -129,7 +161,7 @@ function LoginContent() {
               fill="#EA4335"
             />
           </svg>
-          Sign in with Google
+          or sign in with Google
         </button>
       </div>
 

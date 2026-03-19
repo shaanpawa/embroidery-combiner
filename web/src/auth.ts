@@ -1,19 +1,43 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 
-const isAuthConfigured =
+const isGoogleConfigured =
   process.env.GOOGLE_CLIENT_ID &&
   process.env.GOOGLE_CLIENT_ID !== "replace-with-google-client-id";
 
+const isPasswordConfigured = !!process.env.ADMIN_PASSWORD;
+
+const providers = [];
+
+if (isGoogleConfigured) {
+  providers.push(
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    })
+  );
+}
+
+if (isPasswordConfigured) {
+  providers.push(
+    Credentials({
+      name: "Password",
+      credentials: {
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (credentials?.password === process.env.ADMIN_PASSWORD) {
+          return { id: "operator", email: "operator@micro", name: "Operator" };
+        }
+        return null;
+      },
+    })
+  );
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: isAuthConfigured
-    ? [
-        Google({
-          clientId: process.env.GOOGLE_CLIENT_ID!,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-        }),
-      ]
-    : [],
+  providers,
   secret: process.env.NEXTAUTH_SECRET || "dev-secret-not-for-production",
   session: {
     strategy: "jwt",
