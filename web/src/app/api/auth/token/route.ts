@@ -1,10 +1,8 @@
 import { auth } from "@/auth";
 import { SignJWT } from "jose";
 
-const isAuthConfigured =
-  (process.env.GOOGLE_CLIENT_ID &&
-    process.env.GOOGLE_CLIENT_ID !== "replace-with-google-client-id") ||
-  !!process.env.ADMIN_PASSWORD;
+// Credentials provider is always registered, so auth is always configured
+const isAuthConfigured = true;
 
 const secret = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "dev-secret-not-for-production"
