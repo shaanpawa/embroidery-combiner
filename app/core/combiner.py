@@ -16,16 +16,43 @@ class CombineError(Exception):
     pass
 
 
-def _strip_needle_ups(pattern: pyembroidery.EmbPattern) -> None:
-    """Remove all COLOR_CHANGE (needle up) commands from the pattern.
+def _strip_extra_color_changes(pattern: pyembroidery.EmbPattern, num_designs: int) -> None:
+    """Remove only the extra COLOR_CHANGE commands inserted by add_pattern().
 
-    In Wings software these show as 'needle up' icons in the sequence viewer.
-    The operator normally deletes them manually so the machine runs continuously.
-    We strip them here so the output is ready for the machine without manual editing.
+    Each individual name DST has exactly 1 internal COLOR_CHANGE (e.g. red→green).
+    When add_pattern() merges designs, it injects 1 extra COLOR_CHANGE at each
+    boundary. We keep the N internal ones and remove the N-1 extras.
+
+    Strategy: each design contributes 1 COLOR_CHANGE. add_pattern() adds 1 more
+    between each pair. So we see pairs of COLOR_CHANGE at boundaries — the extra
+    one is always the first of the pair (injected by add_pattern before the
+    design's own stitches). We keep every other COLOR_CHANGE starting from the
+    first real one.
     """
-    pattern.stitches = [
-        s for s in pattern.stitches if s[2] != pyembroidery.COLOR_CHANGE
-    ]
+    if num_designs <= 1:
+        return  # Nothing to strip for a single design
+
+    # Find all COLOR_CHANGE indices
+    cc_indices = [i for i, s in enumerate(pattern.stitches) if s[2] == pyembroidery.COLOR_CHANGE]
+
+    # We expect num_designs internal + (num_designs - 1) extras = 2*num_designs - 1 total
+    # The extras are the ones add_pattern() inserted at boundaries.
+    # Pattern: [design1 stitches] [CC_internal_1] [TRIM] [CC_extra_1] [design2 stitches] [CC_internal_2] ...
+    # The extra CC is always right after a TRIM (at the boundary).
+    # So: remove any COLOR_CHANGE that immediately follows a TRIM command.
+    to_remove = set()
+    for idx in cc_indices:
+        # Look backwards for the nearest non-NOP/non-SEQUENCE_BREAK command
+        for prev in range(idx - 1, -1, -1):
+            cmd = pattern.stitches[prev][2]
+            if cmd == pyembroidery.TRIM:
+                to_remove.add(idx)
+                break
+            elif cmd in (pyembroidery.STITCH, pyembroidery.JUMP, pyembroidery.COLOR_CHANGE):
+                break  # Not after a TRIM, keep it
+
+    if to_remove:
+        pattern.stitches = [s for i, s in enumerate(pattern.stitches) if i not in to_remove]
 
 
 def _read_design(path: str) -> pyembroidery.EmbPattern:
@@ -121,7 +148,7 @@ def combine_designs(
         progress_offset=0,
         progress_total=total,
     )
-    _strip_needle_ups(combined)
+    _strip_extra_color_changes(combined, len(dst_files))
     combined.add_command(pyembroidery.END)
     return combined
 
@@ -170,7 +197,7 @@ def combine_designs_two_column(
             left_files, gap, progress_callback,
             progress_offset=0, progress_total=total_files - 1,
         )
-        _strip_needle_ups(combined)
+        _strip_extra_color_changes(combined, len(left_files) if not right_files else len(right_files))
         combined.add_command(pyembroidery.END)
         return combined
 
@@ -182,7 +209,7 @@ def combine_designs_two_column(
             right_files, gap, progress_callback,
             progress_offset=0, progress_total=total_files - 1,
         )
-        _strip_needle_ups(combined)
+        _strip_extra_color_changes(combined, len(left_files) if not right_files else len(right_files))
         combined.add_command(pyembroidery.END)
         return combined
 
@@ -216,7 +243,7 @@ def combine_designs_two_column(
     # Merge right into left
     left_pattern.add_command(pyembroidery.TRIM)
     left_pattern.add_pattern(right_pattern)
-    _strip_needle_ups(left_pattern)
+    _strip_extra_color_changes(left_pattern, len(left_files) + len(right_files))
     left_pattern.add_command(pyembroidery.END)
 
     return left_pattern
