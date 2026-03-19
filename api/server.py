@@ -329,21 +329,34 @@ async def export_endpoint(
     if not combos_to_export:
         raise HTTPException(400, "No combos selected")
 
+    import tempfile
+
     output_dir = get_output_dir(session_id)
-    for f in os.listdir(output_dir):
-        os.remove(os.path.join(output_dir, f))
-
     dst_dir = get_dst_dir(session_id)
-    results = export_all(
-        combos_to_export, dst_dir, output_dir,
-        gap_mm=gap_mm, column_gap_mm=column_gap_mm, overwrite=True,
-    )
 
-    success = [r for r in results if r.success]
-    failed = [r for r in results if not r.success]
+    # Export to temp dir first — only replace output_dir on success
+    tmp_dir = tempfile.mkdtemp(prefix="combo_export_")
+    try:
+        results = export_all(
+            combos_to_export, dst_dir, tmp_dir,
+            gap_mm=gap_mm, column_gap_mm=column_gap_mm, overwrite=True,
+        )
 
-    if not success:
-        raise HTTPException(500, f"All exports failed. First error: {failed[0].error if failed else 'unknown'}")
+        success = [r for r in results if r.success]
+        failed = [r for r in results if not r.success]
+
+        if not success:
+            raise HTTPException(500, f"All exports failed. First error: {failed[0].error if failed else 'unknown'}")
+
+        # Success — move files from temp to output dir
+        for f in os.listdir(output_dir):
+            os.remove(os.path.join(output_dir, f))
+        for r in success:
+            dest = os.path.join(output_dir, os.path.basename(r.output_path))
+            shutil.move(r.output_path, dest)
+            r.output_path = dest
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     update_session(
         session_id,

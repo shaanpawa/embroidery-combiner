@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "micro | ossia",
-  description: "Production automation tools for Micro Embroidery Co.",
+  title: "Combo Builder | Micro Automation",
+  description: "Combine embroidery name programs into production-ready DST combo files — Micro Automation by Ossia",
 };
 
 export default function RootLayout({

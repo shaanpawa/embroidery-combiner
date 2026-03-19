@@ -1,0 +1,164 @@
+"use client";
+
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+
+type Lang = "en" | "th";
+
+interface I18nContext {
+  lang: Lang;
+  toggle: () => void;
+  t: (key: string) => string;
+}
+
+const translations: Record<string, Record<Lang, string>> = {
+  // Login
+  "login.welcome": { en: "Welcome back", th: "ยินดีต้อนรับ" },
+  "login.subtitle": { en: "Sign in to access Micro Automation", th: "เข้าสู่ระบบ Micro Automation" },
+  "login.password": { en: "Enter password", th: "ใส่รหัสผ่าน" },
+  "login.signin": { en: "Sign In", th: "เข้าสู่ระบบ" },
+  "login.signing_in": { en: "Signing in...", th: "กำลังเข้าสู่ระบบ..." },
+  "login.google": { en: "or sign in with Google", th: "หรือเข้าสู่ระบบด้วย Google" },
+  "login.error.password": { en: "Incorrect password. Please try again.", th: "รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่" },
+  "login.error.denied": { en: "Access denied. Contact your administrator.", th: "ไม่มีสิทธิ์เข้าใช้งาน ติดต่อผู้ดูแลระบบ" },
+  "login.error.generic": { en: "Something went wrong. Please try again.", th: "เกิดข้อผิดพลาด กรุณาลองใหม่" },
+  "login.footer": { en: "MICRO AUTOMATION BY OSSIA", th: "MICRO AUTOMATION BY OSSIA" },
+
+  // Homepage
+  "home.subtitle": { en: "AUTOMATION TOOLS", th: "เครื่องมืออัตโนมัติ" },
+  "home.combo.title": { en: "Combo Builder", th: "Combo Builder" },
+  "home.combo.desc": { en: "Combine embroidery name programs into production-ready combo files.", th: "รวมโปรแกรมชื่อปักเป็นไฟล์คอมโบสำหรับการผลิต" },
+  "home.combo.available": { en: "AVAILABLE", th: "พร้อมใช้งาน" },
+  "home.stitch.title": { en: "Stitch Count Predictor", th: "ตัวทำนายจำนวนฝีเข็ม" },
+  "home.stitch.desc": { en: "Predict stitch counts and production time from design files.", th: "ทำนายจำนวนฝีเข็มและเวลาผลิตจากไฟล์ดีไซน์" },
+  "home.batch.title": { en: "Batch Inspector", th: "ตรวจสอบแบทช์" },
+  "home.batch.desc": { en: "Validate and inspect DST/NGS files before production runs.", th: "ตรวจสอบไฟล์ DST/NGS ก่อนผลิต" },
+  "home.coming_soon": { en: "Coming Soon", th: "เร็วๆ นี้" },
+  "home.footer": { en: "PRODUCTION TOOLS FOR MICRO EMBROIDERY CO.", th: "เครื่องมือการผลิตสำหรับ MICRO EMBROIDERY CO." },
+
+  // Combo Builder - Session Picker
+  "cb.title": { en: "Combo Builder", th: "Combo Builder" },
+  "cb.session.subtitle": { en: "Create a new session to start combining embroidery name programs into production files.", th: "สร้างเซสชันใหม่เพื่อเริ่มรวมโปรแกรมชื่อปักเป็นไฟล์การผลิต" },
+  "cb.session.name": { en: "Session Name", th: "ชื่อเซสชัน" },
+  "cb.session.start": { en: "Start Session", th: "เริ่มเซสชัน" },
+  "cb.session.demo": { en: "or load demo data to explore", th: "หรือโหลดข้อมูลตัวอย่าง" },
+  "cb.session.previous": { en: "Previous Sessions", th: "เซสชันก่อนหน้า" },
+  "cb.session.loading": { en: "Loading session...", th: "กำลังโหลดเซสชัน..." },
+  "cb.session.back": { en: "← Back to sessions", th: "← กลับไปเซสชัน" },
+  "cb.session.new": { en: "+ New Session", th: "+ เซสชันใหม่" },
+
+  // Combo Builder - Workflow
+  "cb.subtitle": { en: "Upload an Excel order and DST programs to generate combo files", th: "อัปโหลดไฟล์ Excel คำสั่งซื้อและโปรแกรม DST เพื่อสร้างไฟล์คอมโบ" },
+  "cb.excel.title": { en: "Order Excel", th: "ไฟล์ Excel คำสั่งซื้อ" },
+  "cb.excel.hint": { en: "Drop .xlsx or click to browse", th: "ลาก .xlsx หรือคลิกเพื่อเลือกไฟล์" },
+  "cb.excel.parsing": { en: "Parsing...", th: "กำลังอ่าน..." },
+  "cb.dst.title": { en: "DST Programs", th: "โปรแกรม DST" },
+  "cb.dst.hint": { en: "Drop folder or click to browse .zip", th: "ลากโฟลเดอร์หรือคลิกเพื่อเลือก .zip" },
+  "cb.dst.hint_disabled": { en: "Upload Excel first", th: "อัปโหลด Excel ก่อน" },
+  "cb.dst.uploading": { en: "Uploading...", th: "กำลังอัปโหลด..." },
+  "cb.dst.matched": { en: "programs matched", th: "โปรแกรมตรงกัน" },
+  "cb.dst.missing": { en: "missing", th: "ไม่พบ" },
+
+  // Column Mapping
+  "cb.mapping.title": { en: "Column Mapping", th: "การจับคู่คอลัมน์" },
+  "cb.mapping.auto": { en: "Auto-detected columns — verify and confirm", th: "ตรวจจับคอลัมน์อัตโนมัติ — ตรวจสอบและยืนยัน" },
+  "cb.mapping.review": { en: "Some columns need manual selection", th: "บางคอลัมน์ต้องเลือกด้วยตนเอง" },
+  "cb.mapping.needs_review": { en: "Needs review", th: "ต้องตรวจสอบ" },
+  "cb.mapping.confirm": { en: "Confirm & Parse", th: "ยืนยันและอ่านข้อมูล" },
+  "cb.mapping.select": { en: "— select —", th: "— เลือก —" },
+  "cb.mapping.field.program": { en: "Program", th: "โปรแกรม" },
+  "cb.mapping.field.name_line1": { en: "Name", th: "ชื่อ" },
+  "cb.mapping.field.name_line2": { en: "Title", th: "ตำแหน่ง" },
+  "cb.mapping.field.quantity": { en: "Quantity", th: "จำนวน" },
+  "cb.mapping.field.com_no": { en: "Combo No", th: "เลขคอมโบ" },
+  "cb.mapping.field.machine_program": { en: "Machine", th: "เครื่อง" },
+  "cb.mapping.help.program": { en: "DST file number (e.g., 42 = 42.DST)", th: "เลขไฟล์ DST (เช่น 42 = 42.DST)" },
+  "cb.mapping.help.name_line1": { en: "Name to be embroidered", th: "ชื่อที่จะปัก" },
+  "cb.mapping.help.name_line2": { en: "Second line — organization, title (optional)", th: "บรรทัดที่ 2 — องค์กร, ตำแหน่ง (ไม่บังคับ)" },
+  "cb.mapping.help.quantity": { en: "How many copies of this name", th: "จำนวนสำเนาของชื่อนี้" },
+  "cb.mapping.help.com_no": { en: "Names with same number go in the same output file", th: "ชื่อที่มีเลขเดียวกันจะรวมอยู่ในไฟล์เดียวกัน" },
+  "cb.mapping.help.machine_program": { en: "Machine program code (e.g., MA50310)", th: "รหัสโปรแกรมเครื่อง (เช่น MA50310)" },
+
+  // Stats
+  "cb.stats.names": { en: "NAMES", th: "ชื่อ" },
+  "cb.stats.groups": { en: "GROUPS", th: "กลุ่ม" },
+  "cb.stats.output": { en: "OUTPUT FILES", th: "ไฟล์ผลลัพธ์" },
+  "cb.stats.slots": { en: "SLOTS", th: "ช่อง" },
+
+  // Combo list
+  "cb.files.title": { en: "Output Files", th: "ไฟล์ผลลัพธ์" },
+  "cb.files.all": { en: "All", th: "ทั้งหมด" },
+  "cb.files.none": { en: "None", th: "ไม่เลือก" },
+  "cb.preview.click": { en: "Click a combo to preview", th: "คลิกคอมโบเพื่อดูตัวอย่าง" },
+  "cb.preview.left": { en: "Left Column", th: "คอลัมน์ซ้าย" },
+  "cb.preview.right": { en: "Right Column", th: "คอลัมน์ขวา" },
+  "cb.preview.no_right": { en: "No right column", th: "ไม่มีคอลัมน์ขวา" },
+
+  // Settings
+  "cb.settings": { en: "Settings", th: "ตั้งค่า" },
+  "cb.settings.vgap": { en: "Vertical gap", th: "ระยะห่างแนวตั้ง" },
+  "cb.settings.cgap": { en: "Column gap", th: "ระยะห่างคอลัมน์" },
+
+  // Excel preview
+  "cb.excel.view": { en: "View order data", th: "ดูข้อมูลคำสั่งซื้อ" },
+  "cb.excel.hide": { en: "Hide", th: "ซ่อน" },
+  "cb.excel.rows": { en: "rows", th: "แถว" },
+  "cb.excel.showing": { en: "Showing", th: "แสดง" },
+  "cb.excel.of": { en: "of", th: "จาก" },
+
+  // Export
+  "cb.export.btn": { en: "Export", th: "ส่งออก" },
+  "cb.export.files": { en: "Files", th: "ไฟล์" },
+  "cb.export.file": { en: "File", th: "ไฟล์" },
+  "cb.export.exporting": { en: "Exporting...", th: "กำลังส่งออก..." },
+  "cb.export.progress": { en: "Combining files on server... this may take 1-2 minutes", th: "กำลังรวมไฟล์บนเซิร์ฟเวอร์... อาจใช้เวลา 1-2 นาที" },
+  "cb.export.done": { en: "Downloaded", th: "ดาวน์โหลดแล้ว" },
+  "cb.export.again": { en: "Download again", th: "ดาวน์โหลดอีกครั้ง" },
+  "cb.export.previous": { en: "Previously exported", th: "ส่งออกก่อนหน้านี้แล้ว" },
+  "cb.export.need_dst": { en: "Upload DST files to enable export", th: "อัปโหลดไฟล์ DST เพื่อเปิดใช้งานการส่งออก" },
+  "cb.exported": { en: "Exported", th: "ส่งออกแล้ว" },
+
+  // Nav
+  "nav.signout": { en: "Sign out", th: "ออกจากระบบ" },
+
+  // General
+  "names": { en: "names", th: "ชื่อ" },
+  "combos": { en: "combos", th: "คอมโบ" },
+  "empty": { en: "empty", th: "ว่าง" },
+  "Combo": { en: "Combo", th: "คอมโบ" },
+};
+
+const I18nCtx = createContext<I18nContext>({
+  lang: "en",
+  toggle: () => {},
+  t: (key) => key,
+});
+
+export function LanguageProvider({ children }: { children: ReactNode }) {
+  const [lang, setLang] = useState<Lang>("en");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("lang");
+    if (saved === "th" || saved === "en") setLang(saved);
+  }, []);
+
+  const toggle = () => {
+    const next = lang === "en" ? "th" : "en";
+    setLang(next);
+    localStorage.setItem("lang", next);
+    document.documentElement.lang = next;
+  };
+
+  const t = (key: string): string => {
+    return translations[key]?.[lang] || key;
+  };
+
+  return (
+    <I18nCtx.Provider value={{ lang, toggle, t }}>
+      {children}
+    </I18nCtx.Provider>
+  );
+}
+
+export function useLanguage() {
+  return useContext(I18nCtx);
+}

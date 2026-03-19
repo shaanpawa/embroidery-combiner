@@ -45,7 +45,7 @@ def get_db() -> sqlite3.Connection:
 def init_db() -> sqlite3.Connection:
     """Create the database file and tables if they don't exist."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
@@ -109,14 +109,15 @@ def create_session(sid: str, name: str, user_email: str = "local") -> Dict:
     """Insert a new session row and return it as a dict."""
     now = _now()
     db = get_db()
-    db.execute(
-        """
-        INSERT INTO sessions (id, user_email, name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (sid, user_email, name, now, now),
-    )
-    db.commit()
+    with _db_lock:
+        db.execute(
+            """
+            INSERT INTO sessions (id, user_email, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (sid, user_email, name, now, now),
+        )
+        db.commit()
     return get_session(sid)
 
 
@@ -152,16 +153,18 @@ def update_session(sid: str, **kwargs) -> Optional[Dict]:
     values.append(sid)
 
     db = get_db()
-    db.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
-    db.commit()
+    with _db_lock:
+        db.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
+        db.commit()
     return get_session(sid)
 
 
 def delete_session(sid: str) -> bool:
     """Delete a session row. Returns True if a row was deleted."""
     db = get_db()
-    cur = db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
-    db.commit()
+    with _db_lock:
+        cur = db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+        db.commit()
     return cur.rowcount > 0
 
 
