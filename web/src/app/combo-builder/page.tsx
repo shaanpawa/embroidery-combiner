@@ -808,7 +808,18 @@ export default function ComboBuilder() {
         <div className="shrink-0 px-6 py-3" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", borderTop: "1px solid var(--glass-border)", animation: "slideUp 0.3s ease 0.2s forwards", opacity: 0 }}>
           <div className="max-w-6xl mx-auto flex items-center gap-4">
             <div className="flex-1 min-w-0">
-              {exporting && <div><div className="progress-bar"><div className="progress-bar-fill" style={{ width: `${exportProgress}%`, transition: "width 1s ease" }} /></div><p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Combining {selectedCombos.size} files on server... this may take a minute</p></div>}
+              {exporting && (
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="animate-spin w-4 h-4 border-2 rounded-full" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+                    <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>Exporting... {exportProgress}%</p>
+                  </div>
+                  <div className="progress-bar" style={{ height: "8px" }}>
+                    <div className="progress-bar-fill" style={{ width: `${exportProgress}%`, transition: "width 1s ease" }} />
+                  </div>
+                  <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Combining {selectedCombos.size} files on server... this may take a minute</p>
+                </div>
+              )}
               {downloadUrl && !exporting && (
                 <div className="flex items-center gap-2">
                   <p className="text-[11px]" style={{ color: "var(--success)" }}>✓ Downloaded combos_{sessionName.replace(/\s+/g, "_")}.zip</p>
