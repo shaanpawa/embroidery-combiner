@@ -1,6 +1,6 @@
 """
 Embroidery Design Combiner — Entry point.
-Combines multiple embroidery design files into one, stacked vertically.
+Excel-driven combo workflow with two-column layout.
 """
 
 import sys
@@ -10,7 +10,7 @@ import customtkinter as ctk
 from app.config import Config
 from app.licensing import check_license
 from app.ui.components.license_dialog import LicenseDialog
-from app.ui.app import CombinerApp
+from app.ui.combo_app import ComboApp
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
         root.destroy()
 
     # Launch main app
-    app = CombinerApp(config)
+    app = ComboApp(config)
     app.mainloop()
 
 

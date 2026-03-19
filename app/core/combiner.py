@@ -1,6 +1,7 @@
 """
 Core combining logic for embroidery design files.
 Reads multiple DST files and combines them vertically with configurable gap.
+Supports single-column and two-column layouts.
 """
 
 import errno
@@ -13,6 +14,76 @@ import pyembroidery
 class CombineError(Exception):
     """Raised when combining fails."""
     pass
+
+
+def _strip_needle_ups(pattern: pyembroidery.EmbPattern) -> None:
+    """Remove all COLOR_CHANGE (needle up) commands from the pattern.
+
+    In Wings software these show as 'needle up' icons in the sequence viewer.
+    The operator normally deletes them manually so the machine runs continuously.
+    We strip them here so the output is ready for the machine without manual editing.
+    """
+    pattern.stitches = [
+        s for s in pattern.stitches if s[2] != pyembroidery.COLOR_CHANGE
+    ]
+
+
+def _read_design(path: str) -> pyembroidery.EmbPattern:
+    """Read a DST file and validate it has stitches and dimensions."""
+    try:
+        design = pyembroidery.read(path)
+    except Exception as e:
+        raise CombineError(f"Failed to read {os.path.basename(path)}: {e}")
+
+    if design is None or len(design.stitches) == 0:
+        raise CombineError(f"Cannot read or empty: {os.path.basename(path)}")
+
+    ext = design.extents()
+    if ext is None or (ext[0] == ext[2] and ext[1] == ext[3]):
+        raise CombineError(f"Zero-dimension design: {os.path.basename(path)}")
+
+    return design
+
+
+def _stack_vertical(
+    dst_files: List[str],
+    gap: float,
+    progress_callback: Optional[Callable] = None,
+    progress_offset: int = 0,
+    progress_total: int = 0,
+) -> pyembroidery.EmbPattern:
+    """
+    Stack multiple DST files vertically with a gap (in 1/10mm units).
+    Returns a combined pattern with no END command (caller adds it).
+    """
+    if not dst_files:
+        raise CombineError("No files to stack")
+
+    combined = _read_design(dst_files[0])
+    combined.stitches = [s for s in combined.stitches if s[2] != pyembroidery.END]
+
+    for i, path in enumerate(dst_files[1:], 1):
+        design = _read_design(path)
+
+        c_ext = combined.extents()
+        d_ext = design.extents()
+
+        if c_ext is None:
+            raise CombineError("Cannot determine dimensions of combined design")
+        if d_ext is None:
+            raise CombineError(f"Cannot determine dimensions of {os.path.basename(path)}")
+
+        y_offset = c_ext[3] - d_ext[1] + gap
+        design.translate(0, y_offset)
+        design.stitches = [s for s in design.stitches if s[2] != pyembroidery.END]
+
+        combined.add_command(pyembroidery.TRIM)
+        combined.add_pattern(design)
+
+        if progress_callback:
+            progress_callback(progress_offset + i, progress_total)
+
+    return combined
 
 
 def combine_designs(
@@ -40,61 +111,115 @@ def combine_designs(
     gap_mm = max(0.0, min(50.0, gap_mm))
     gap = gap_mm * 10  # pyembroidery uses 1/10mm units
 
-    try:
-        combined = pyembroidery.read(dst_files[0])
-    except Exception as e:
-        raise CombineError(f"Failed to read {os.path.basename(dst_files[0])}: {e}")
-
-    if combined is None or len(combined.stitches) == 0:
-        raise CombineError(f"Cannot read or empty: {os.path.basename(dst_files[0])}")
-
-    c_ext = combined.extents()
-    if c_ext is None or (c_ext[0] == c_ext[2] and c_ext[1] == c_ext[3]):
-        raise CombineError(f"Zero-dimension design: {os.path.basename(dst_files[0])}")
-
     if len(dst_files) == 1:
+        return _read_design(dst_files[0])
+
+    total = len(dst_files) - 1
+    combined = _stack_vertical(
+        dst_files, gap,
+        progress_callback=progress_callback,
+        progress_offset=0,
+        progress_total=total,
+    )
+    _strip_needle_ups(combined)
+    combined.add_command(pyembroidery.END)
+    return combined
+
+
+def combine_designs_two_column(
+    left_files: List[str],
+    right_files: List[str],
+    gap_mm: float = 3.0,
+    column_gap_mm: float = 10.0,
+    progress_callback: Optional[Callable] = None,
+) -> pyembroidery.EmbPattern:
+    """
+    Combine designs in a two-column layout.
+
+    Left column (slots 1-10) stacked vertically, right column (slots 11-20)
+    stacked vertically and offset horizontally. Both columns start at the same y.
+
+    Args:
+        left_files: DST file paths for the left column (max 10).
+        right_files: DST file paths for the right column (max 10).
+        gap_mm: Vertical gap between designs in millimeters.
+        column_gap_mm: Horizontal gap between columns in millimeters.
+        progress_callback: Called as progress_callback(current, total).
+
+    Returns:
+        Combined EmbPattern object.
+
+    Raises:
+        CombineError: If combining fails.
+    """
+    if not left_files and not right_files:
+        raise CombineError("No files to combine")
+
+    gap_mm = max(0.0, min(50.0, gap_mm))
+    column_gap_mm = max(0.0, min(100.0, column_gap_mm))
+    gap = gap_mm * 10
+    column_gap = column_gap_mm * 10
+
+    total_files = len(left_files) + len(right_files)
+
+    # Left column only
+    if not right_files:
+        if len(left_files) == 1:
+            return _read_design(left_files[0])
+        combined = _stack_vertical(
+            left_files, gap, progress_callback,
+            progress_offset=0, progress_total=total_files - 1,
+        )
+        _strip_needle_ups(combined)
+        combined.add_command(pyembroidery.END)
         return combined
 
-    # Strip END from first design so subsequent designs can be appended.
-    # pyembroidery's DST writer stops at the first END command, which would
-    # cause all designs after the first to be silently dropped from the output.
-    combined.stitches = [s for s in combined.stitches if s[2] != pyembroidery.END]
+    # Right column only
+    if not left_files:
+        if len(right_files) == 1:
+            return _read_design(right_files[0])
+        combined = _stack_vertical(
+            right_files, gap, progress_callback,
+            progress_offset=0, progress_total=total_files - 1,
+        )
+        _strip_needle_ups(combined)
+        combined.add_command(pyembroidery.END)
+        return combined
 
-    for i, path in enumerate(dst_files[1:], 1):
-        try:
-            design = pyembroidery.read(path)
-        except Exception as e:
-            raise CombineError(f"Failed to read {os.path.basename(path)}: {e}")
+    # Both columns
+    left_progress = len(left_files) - 1
+    left_pattern = _stack_vertical(
+        left_files, gap, progress_callback,
+        progress_offset=0, progress_total=total_files - 1,
+    )
 
-        if design is None or len(design.stitches) == 0:
-            raise CombineError(f"Cannot read or empty: {os.path.basename(path)}")
+    right_pattern = _stack_vertical(
+        right_files, gap, progress_callback,
+        progress_offset=left_progress, progress_total=total_files - 1,
+    )
 
-        c_ext = combined.extents()
-        d_ext = design.extents()
+    # Position right column next to left column
+    l_ext = left_pattern.extents()
+    r_ext = right_pattern.extents()
 
-        if c_ext is None:
-            raise CombineError("Cannot determine dimensions of combined design")
-        if d_ext is None:
-            raise CombineError(f"Cannot determine dimensions of {os.path.basename(path)}")
+    if l_ext is None or r_ext is None:
+        raise CombineError("Cannot determine column dimensions")
 
-        # Stack: new design below combined + gap
-        y_offset = c_ext[3] - d_ext[1] + gap
-        design.translate(0, y_offset)
+    # Horizontal offset: right edge of left column + gap - left edge of right column
+    x_offset = l_ext[2] - r_ext[0] + column_gap
+    # Vertical alignment: both columns start at the same y
+    y_offset = l_ext[1] - r_ext[1]
 
-        # Strip END from this design before appending
-        design.stitches = [s for s in design.stitches if s[2] != pyembroidery.END]
+    right_pattern.translate(x_offset, y_offset)
+    right_pattern.stitches = [s for s in right_pattern.stitches if s[2] != pyembroidery.END]
 
-        # TRIM before next design so machine cuts thread
-        combined.add_command(pyembroidery.TRIM)
-        combined.add_pattern(design)
+    # Merge right into left
+    left_pattern.add_command(pyembroidery.TRIM)
+    left_pattern.add_pattern(right_pattern)
+    _strip_needle_ups(left_pattern)
+    left_pattern.add_command(pyembroidery.END)
 
-        if progress_callback:
-            progress_callback(i, len(dst_files) - 1)
-
-    # Add final END command
-    combined.add_command(pyembroidery.END)
-
-    return combined
+    return left_pattern
 
 
 def save_combined(

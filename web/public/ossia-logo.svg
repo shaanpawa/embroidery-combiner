@@ -1,0 +1,6 @@
+<svg width="80" height="28" viewBox="0 0 80 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ossia — geometric wordmark -->
+  <text x="0" y="20" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="22" font-weight="500" letter-spacing="-0.5" fill="currentColor">ossia</text>
+  <!-- brand accent: small diamond -->
+  <rect x="68" y="5" width="6" height="6" rx="1.5" transform="rotate(45 71 8)" fill="#2b5e49"/>
+</svg>

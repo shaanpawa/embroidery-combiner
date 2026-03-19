@@ -1,138 +1,118 @@
-# Embroidery Combiner — Project Context
+# Micro Automation by Ossia — Project Context
 
 ## What This Is
 
-Tool for FM (Thai embroidery company). Automates combining sequential embroidery design files into one file, stacked vertically. Replaces a manual process that takes an operator 4-6 hours/week.
+**Micro Automation** is a product suite by Ossia that automates workflows for [Micro Embroidery Co.](https://www.microembroidery.com/) (Bangkok, Thailand — manufacturer of embroidery badges/patches).
 
-## How It Works
+**First product: Combo Builder** — Combines individual embroidery name programs into production-ready combo files. An operator uploads an Excel order sheet + a folder of DST program files, and the app generates combined DST combo files ready for the machine.
 
-**Operator does:** Browse to folder → click Combine → get combined output file.
+## How Combo Builder Works
 
-**App does behind the scenes:**
-1. Scans folder for .ngs and .dst files
-2. Sorts by number extracted from filename (216.ngs, 217.ngs, ...)
-3. Validates each file (checks for corruption, empty files)
-4. If NGS files found: converts each to DST via Wings software (pywinauto GUI automation, Windows only)
-5. Combines all DST files vertically with configurable gap (default 3mm)
-6. Saves combined output as `{first}-{last}.dst` (e.g., 216-225.dst) to same folder
-7. Skips files that look like previous combined output (e.g., 216-225.dst won't be re-included)
+**Operator does:** Upload Excel order → Upload DST programs → Review combos → Export combined files
+
+**App does:**
+1. Parses Excel order (columns: Program number, Name, Title, Quantity, Com No, Machine Program)
+2. Groups names by (Machine Program + Com No) — determines which names go in the same combo
+3. Expands quantities (qty=2 = name takes 2 slots)
+4. Splits groups into combo files of max 20 slots (10 left column + 10 right column)
+5. Maps each slot to its DST file (by program number)
+6. Combines DST files in two-column layout with configurable gaps
+7. Exports as downloadable zip of combo DST files
 
 ## Architecture
 
 ```
-app/core/           — Business logic (no UI dependencies, fully tested)
-  combiner.py       — Reads DST files, stacks vertically, handles gaps and TRIM commands
-  converter.py      — NGS→DST conversion via Wings XP or My Editor GUI automation (Windows only)
-  file_discovery.py — Folder scanning, numeric sorting, sequence gap/duplicate detection
-  validator.py      — File validation (DST via pyembroidery, NGS via OLE2 structure check)
+app/core/               — Business logic (no UI dependencies, 81 tests)
+  excel_parser.py       — Parse Excel, group by (M + ComNo), expand qty, split into combos
+  combiner.py           — DST combining: single-col + two-col layout
+  pipeline.py           — Maps combo slots → DST files, orchestrates export
+  converter.py          — NGS→DST via GUI automation (Windows only, untested)
+  file_discovery.py     — Folder scanning (legacy workflow, still available)
+  validator.py          — File validation (DST/NGS)
 
-app/config.py       — Settings persistence (JSON), app constants, gap presets
-app/licensing.py    — Hardware-locked HMAC licensing (machine fingerprint from MAC+CPU+OS)
+app/config.py           — Settings persistence, constants (v2.0.0)
+app/licensing.py        — Hardware-locked HMAC licensing
 
-app/ui/             — Desktop UI (customtkinter) — built but NOT visually tested
-  app.py            — Main window, pipeline orchestration, threading
-  theme.py          — Colors, fonts, spacing
-  components/       — Modular UI components (file_table, gap_controls, output_panel, etc.)
+api/                    — FastAPI backend (port 8000)
+  server.py             — Endpoints: parse-excel, upload-dst, export, dev/load-sample
 
-main.py             — Entry point (license check → launch app)
-build.py            — Nuitka packaging for standalone .exe
-web_demo.py         — Flask web demo (used for testing logic on Mac)
+web/                    — Next.js frontend (port 3000)
+  src/app/page.tsx      — Product launcher ("Micro Automation by Ossia")
+  src/app/combo-builder/page.tsx — Combo Builder workflow
+  src/app/globals.css   — Design system (ScrapYard palette + liquid glass)
+
+app/ui/                 — Desktop UI (customtkinter) — functional but web is primary path
+  combo_app.py          — Excel-driven workflow
+  theme.py              — Dark/light design system
+
+tests/                  — 81 automated tests (pytest)
+_archive/               — Legacy files (pre-refactor standalone modules, old builds)
 ```
 
 ## Key Technical Facts
 
-- **NGS is proprietary** — no library (including pyembroidery) can read NGS stitch data. Only Wings software (Windows) can decode it.
+- **NGS is proprietary** — no library reads stitch data. pyembroidery does NOT support NGS. NGS stores color data; DST does not.
+- **DST has zero color data** — viewers (TrueSizer, Wings) show rainbow palette colors which are purely cosmetic. Machine operator loads the correct threads (red + green).
 - **DST combining works on any OS** — pyembroidery handles DST fully.
-- **95% of incoming files are NGS** — so in practice, this needs Windows.
-- **Wings XP (paid) at FM, My Editor (free) for Shaan's testing** — converter auto-detects whichever is installed.
-- **Cannot byte-compare outputs** — our DST output vs reference NGS files are different formats. Visual verification by operator is the acceptance test.
+- **Critical END bug FIXED** — pyembroidery's DST writer stops at first END command. Fix: strip END between designs, add single END at end.
+- **Critical COLOR_CHANGE bug FIXED** — pyembroidery's `add_pattern()` inserts extra COLOR_CHANGE commands between designs, causing machine stops. Fix: use `stitches.extend()` instead of `add_pattern()` to manually merge stitch data.
+- **Combo file structure** — Each name has 1 COLOR_CHANGE (red→green, automatic needle switch). No STOP commands between names. TRIM between names for thread cutting. Single END at end of file.
+- **Two-column layout** — 10 left + 10 right, 3mm vertical gap, 5mm horizontal gap (configurable)
+- **Combo grouping** — (Machine Program, Com No). M defines patch size/type, Com No adds color grouping.
+- **Case-insensitive file matching** — handles both `1.dst` and `1.DST`
+- **Cannot byte-compare outputs** — visual verification by operator is the acceptance test.
 
-## Current Status (as of March 2026)
+## Design System
 
-### WORKING (tested, verified):
-- **Combiner logic** — 42 automated tests pass. Combines 2, 3, or 10 files. Write→read roundtrip preserves all designs.
-- **Critical END bug FIXED** — pyembroidery adds END after each design; DST writer stops at first END. Fix: strip END between designs, add single END at end. (`app/core/combiner.py` lines 57-94)
-- **File discovery** — scans folders, sorts by number, detects gaps/duplicates, skips previous output
-- **Validation** — DST (pyembroidery parse), NGS (OLE2 structure check)
-- **Web demo** — Flask app at web_demo.py, tested and working for DST combining on Mac
+Based on ScrapYard project palette:
+- Background: warm cream (#f5f0eb)
+- Accent: forest green (#2b5e49)
+- Typography: Geist Sans / Geist Mono
+- Effects: Glassmorphism, liquid glass cards, backdrop-filter blur
+- Brand: "Micro Automation by Ossia"
 
-### TESTED ON MAC (March 2026):
-- **Desktop UI launched and verified** — customtkinter app runs on Mac with Python 3.12 (Homebrew) + venv. Loads DST files, combines them, saves output. Progress indicator fixed (hides after completion).
-- **Web demo tested** — Flask app at web_demo.py, confirmed working for DST combining on Mac.
+## Current Status (March 19, 2026)
 
-### NOT TESTED (needs Windows):
-- **NGS→DST conversion via pywinauto** — the converter code (`app/core/converter.py`) is written but the GUI automation has NEVER been tested against real Wings XP or My Editor. Menu names, button labels, dialog titles are all GUESSED based on standard Windows patterns. They must be verified on the actual software.
-  - To verify: open Wings/My Editor on Windows, check if `"File->Open"`, `"File->Save As"`, `"Tajima (*.dst)"` dropdown option, and `"File name:"` labels are correct.
-  - pywinauto's `print_control_identifiers()` can dump the actual UI tree to find correct element names.
-- **Wings auto-detection paths** — converter searches 8 hardcoded paths + system PATH. If FM has Wings installed somewhere else, need to add that path to `_EDITOR_SEARCH` in `converter.py`.
+### DONE:
+- Core logic: excel parser, two-column combiner, pipeline — 81 tests passing
+- Verified with real data: 300 names, 300 DST files → 31 combo files exported
+- FastAPI backend: all endpoints working (parse, upload, export)
+- Next.js frontend: launcher page + combo builder page rendering
+- Desktop app: functional (customtkinter)
+- Fixed COLOR_CHANGE bug: no extra machine stops between names
+- Fixed metadata: clean DST headers
+- Full batch export tested: 31 combo files generated, ready for machine testing
 
-### DECISIONS STILL OPEN:
-- **Desktop vs web app** — both use identical core logic (same `app/core/*` modules). UI decision deferred until logic is tested on Windows with real files. Desktop app already built and launched; web demo also working.
+### IN PROGRESS:
+- Machine testing: combo files need to be tested on actual embroidery machine
+- Web app end-to-end testing (file upload flow in browser needs manual testing)
 
-## What To Do Next
+### NOT TESTED:
+- NGS→DST conversion via pywinauto (needs Windows)
+- Desktop app on Windows
 
-### Step 1: Test on Windows
-1. Copy project folder to Windows laptop
-2. Install Python 3.12+: `python.org/downloads`
-3. Install deps: `pip install pyembroidery olefile pywinauto customtkinter`
-4. **First: verify converter works manually:**
-   ```python
-   from pywinauto import Application
-   # Open My Editor, use print_control_identifiers() to dump UI tree
-   # Compare against strings in converter.py — fix any mismatches
-   ```
-5. **Then: test full pipeline via desktop app:**
-   ```
-   python main.py
-   # Browse to folder with NGS files → Combine → verify output in Wings
-   ```
+## How to Run
 
-### Step 2: Build the .exe
-On the Windows machine:
-```
-pip install nuitka
-python build.py
-```
-This creates `EmbroideryC.exe` — a single standalone file. Operator double-clicks, no Python needed.
-
-### Step 3: Deploy updates
-If a bug is found after shipping:
-1. Fix the code
-2. Re-run `python build.py` to get a new .exe
-3. Replace the old .exe on the operator's machine
-(Consider adding auto-update later if update frequency is high.)
-
-## How to Run (Mac — development only)
-```
+```bash
+# Tests
 cd /Users/shaan_pawa/Micro/embroidery-combiner
-source .venv/bin/activate              # Python 3.12 venv (Tk 9.0)
-python main.py                         # Desktop app (DST only, no NGS conversion)
-python web_demo.py                     # Web demo at http://localhost:5123
-python -m pytest tests/ -v             # 42 tests
-```
-**Mac setup note:** System Python 3.9 has Tk 8.5 (too old for customtkinter). Need Python 3.12 via Homebrew:
-```
-brew install python@3.12 python-tk@3.12
-/opt/homebrew/bin/python3.12 -m venv .venv
-.venv/bin/pip install pyembroidery olefile customtkinter flask
-```
+source .venv/bin/activate
+pytest tests/ -v                # 81 tests
 
-## How to Run (Windows — production)
-```
-cd embroidery-combiner
-pip install pyembroidery olefile pywinauto customtkinter
+# Web app (both servers needed)
+python -m uvicorn api.server:app --reload --port 8000    # API
+cd web && npm run dev                                     # Frontend at localhost:3000
+
+# Desktop app
 python main.py
+
+# Dev shortcut: load real test data via API
+curl http://localhost:8000/api/dev/load-sample
 ```
 
-## Edge Cases Handled
-- Previous combined output in folder (e.g., 216-225.dst): auto-skipped by `is_range_filename()`
-- Mixed folder (NGS + DST): converts NGS, combines all (but same-number NGS+DST would duplicate — unlikely in practice)
-- Conversion failure on one file: continues with others, reports which failed
-- Non-embroidery files: silently ignored
-- Empty folder / single file: clear warning messages
-- Sequence gaps and duplicate numbers: warned
-
-## Files to Ignore
-Legacy duplicates at project root (superseded by `app/` package):
-- `combiner.py`, `converter.py`, `validator.py`, `licensing.py`, `gui.py`
-- These are older versions, NOT used by the app. The real code is in `app/core/` and `app/`.
+## Real Test Data
+- Excel: `test_data/nameorder_04032026-2 add column (1).xlsx` (300 names, 15 groups, 31 combos)
+- DST zip: `test_data/programs_Micro.zip` (300 DST files, 1.DST-300.DST)
+- NGS reference: `test_data/170-183คอม4ปักหัว.ngs` (manually-created correct combo for comparison)
+- Extracted DSTs: `test_real_dst/`
+- Dev endpoint loads from `test_data/` — see `api/server.py` `/api/dev/load-sample`

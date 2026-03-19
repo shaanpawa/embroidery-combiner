@@ -1,0 +1,5 @@
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ossia mark: two overlapping circles — craft ∩ technology -->
+  <circle cx="10" cy="14" r="8" stroke="currentColor" stroke-width="1.8" fill="none" opacity="0.4"/>
+  <circle cx="18" cy="14" r="8" stroke="currentColor" stroke-width="1.8" fill="none"/>
+</svg>
