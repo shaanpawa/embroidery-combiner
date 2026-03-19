@@ -318,17 +318,23 @@ export default function ComboBuilder() {
   const handleExport = useCallback(async () => {
     if (!sessionId || selectedCombos.size === 0) return;
     if (!dstUploaded) { showToast("Upload DST files before exporting"); return; }
-    setExporting(true); setExportProgress(10); setDownloadUrl("");
+    setExporting(true); setExportProgress(5); setDownloadUrl("");
     const form = new FormData();
     form.append("session_id", sessionId);
     form.append("selected_filenames", Array.from(selectedCombos).join(","));
     form.append("gap_mm", String(gapMm));
     form.append("column_gap_mm", String(columnGapMm));
+    // Animate progress while waiting for server (export can take 1-3 min on free tier)
+    let progress = 5;
+    const progressInterval = setInterval(() => {
+      progress = Math.min(progress + 0.5, 85);
+      setExportProgress(Math.round(progress));
+    }, 1000);
     try {
-      setExportProgress(40);
       const res = await fetch(`${API}/api/export`, { method: "POST", body: form });
+      clearInterval(progressInterval);
       if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
-      setExportProgress(80);
+      setExportProgress(90);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       setDownloadUrl(url); setExportProgress(100);
@@ -337,7 +343,7 @@ export default function ComboBuilder() {
       a.href = url; a.download = `combos_${sessionName.replace(/\s+/g, "_")}.zip`; a.click();
       showToast(`Exported ${res.headers.get("X-Export-Success") || selectedCombos.size} output files`, "success");
       fetchSessions();
-    } catch (e) { showToast(`Export failed: ${e instanceof Error ? e.message : "Connection error"}`); }
+    } catch (e) { clearInterval(progressInterval); showToast(`Export failed: ${e instanceof Error ? e.message : "Connection error"}`); }
     setExporting(false);
   }, [sessionId, selectedCombos, dstUploaded, sessionName, gapMm, columnGapMm, showToast, fetchSessions]);
 
@@ -802,7 +808,7 @@ export default function ComboBuilder() {
         <div className="shrink-0 px-6 py-3" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", borderTop: "1px solid var(--glass-border)", animation: "slideUp 0.3s ease 0.2s forwards", opacity: 0 }}>
           <div className="max-w-6xl mx-auto flex items-center gap-4">
             <div className="flex-1 min-w-0">
-              {exporting && <div className="progress-bar"><div className="progress-bar-fill" style={{ width: `${exportProgress}%` }} /></div>}
+              {exporting && <div><div className="progress-bar"><div className="progress-bar-fill" style={{ width: `${exportProgress}%`, transition: "width 1s ease" }} /></div><p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Combining {selectedCombos.size} files on server... this may take a minute</p></div>}
               {downloadUrl && !exporting && (
                 <div className="flex items-center gap-2">
                   <p className="text-[11px]" style={{ color: "var(--success)" }}>✓ Downloaded combos_{sessionName.replace(/\s+/g, "_")}.zip</p>
