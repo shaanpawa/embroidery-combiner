@@ -69,3 +69,4 @@ test_input/
 
 # Old demo
 /web_demo.py
+.vercel
