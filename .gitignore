@@ -62,3 +62,10 @@ EmbroideryC.exe
 # Test data (large files, not needed in repo)
 test_data/
 test_real_dst/
+
+# Legacy folders
+_archive/
+test_input/
+
+# Old demo
+/web_demo.py
