@@ -153,10 +153,10 @@ export default function ComboBuilder() {
     data.groups.forEach((g) => allGroups.add(`${g.machine_program}_${g.com_no}`));
     setExpandedGroups(allGroups);
     if (data.groups[0]?.combos[0]) setPreviewCombo(data.groups[0].combos[0]);
-    if (data.warnings?.length) showToast(`${data.warnings.length} warning(s) during parsing`, "warning");
+    if (data.warnings?.length) showToast(`${data.warnings.length} ${t("ok.warnings")}`, "warning");
     saveSessionName(data.session_id, sessionName);
     fetchSessions();
-  }, [showToast, sessionName, saveSessionName, fetchSessions]);
+  }, [showToast, sessionName, saveSessionName, fetchSessions, t]);
 
   const applyFullSession = useCallback((data: FullSession) => {
     setSessionId(data.session_id);
@@ -234,16 +234,16 @@ export default function ComboBuilder() {
       applyFullSession(data);
       setSessionStarted(true);
     } catch (e) {
-      showToast(`${e instanceof Error ? e.message : "Failed to load session"}`);
+      showToast(`${e instanceof Error ? e.message : t("err.load_session")}`);
     }
     setLoadingSession(false);
-  }, [applyFullSession, showToast]);
+  }, [applyFullSession, showToast, t]);
 
   const deleteSession = useCallback(async (sid: string) => {
     try {
       const res = await authFetch(`${API}/api/session/${sid}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
-      showToast("Session deleted", "success");
+      showToast(t("ok.session_deleted"), "success");
       fetchSessions();
       // If we deleted the active session, go back to picker
       if (sid === sessionId) {
@@ -254,10 +254,10 @@ export default function ComboBuilder() {
         setSessionId("");
       }
     } catch (e) {
-      showToast(`${e instanceof Error ? e.message : "Failed to delete session"}`);
+      showToast(`${e instanceof Error ? e.message : t("err.delete_session")}`);
     }
     setDeleteConfirm(null);
-  }, [sessionId, resetSession, showToast, fetchSessions]);
+  }, [sessionId, resetSession, showToast, fetchSessions, t]);
 
   const removeExcel = useCallback(async () => {
     if (!sessionId) return;
@@ -273,15 +273,15 @@ export default function ComboBuilder() {
       setExportProgress(0);
       setShowExcelPreview(false);
       setExported(false);
-      showToast("Excel data removed", "success");
+      showToast(t("ok.excel_removed"), "success");
       fetchSessions();
     } catch (e) {
-      showToast(`${e instanceof Error ? e.message : "Failed to remove Excel"}`);
+      showToast(`${e instanceof Error ? e.message : t("err.excel_read")}`);
     }
-  }, [sessionId, showToast, fetchSessions]);
+  }, [sessionId, showToast, fetchSessions, t]);
 
   const uploadExcel = useCallback(async (file: File) => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast("Please upload an Excel file (.xlsx or .xls)"); return; }
+    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.excel_format")); return; }
     resetSession();
     setSessionId(""); // Force new server session
     setExcelLoading(true); setExcelFile(file.name);
@@ -295,9 +295,9 @@ export default function ComboBuilder() {
       setSessionId(data.session_id);
       saveSessionName(data.session_id, sessionName);
       fetchSessions();
-    } catch (e) { showToast(`Failed to read Excel: ${e instanceof Error ? e.message : "Connection error"}`); setExcelFile(""); }
+    } catch (e) { showToast(`${t("err.excel_read")}: ${e instanceof Error ? e.message : t("err.connection")}`); setExcelFile(""); }
     setExcelLoading(false);
-  }, [sessionId, resetSession, showToast, sessionName, saveSessionName, fetchSessions]);
+  }, [sessionId, resetSession, showToast, sessionName, saveSessionName, fetchSessions, t]);
 
   const confirmMapping = useCallback(async () => {
     if (!sessionId || !detectData) return;
@@ -310,23 +310,23 @@ export default function ComboBuilder() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       if (data.entries_count === 0) {
-        showToast("No valid entries found with this column mapping. Try adjusting the columns.", "warning");
+        showToast(t("err.no_entries"), "warning");
       } else {
         setMappingConfirmed(true);
         applyParseData(data);
       }
-    } catch (e) { showToast(`Failed to parse Excel: ${e instanceof Error ? e.message : "Connection error"}`); }
+    } catch (e) { showToast(`${t("err.parse_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
     setExcelLoading(false);
-  }, [sessionId, detectData, columnMapping, applyParseData, showToast]);
+  }, [sessionId, detectData, columnMapping, applyParseData, showToast, t]);
 
   const uploadDst = useCallback(async (files: FileList | File[]) => {
-    if (!sessionId) { showToast("Upload an Excel order first"); return; }
+    if (!sessionId) { showToast(t("err.upload_excel_first")); return; }
     const fileArr = Array.from(files);
     const ngsFiles = fileArr.filter((f) => f.name.toLowerCase().endsWith(".ngs"));
-    if (ngsFiles.length > 0) showToast(`${ngsFiles.length} NGS file(s) skipped — convert to DST first using Wings XP on Windows`, "warning");
+    if (ngsFiles.length > 0) showToast(`${ngsFiles.length} ${t("err.ngs_skipped")}`, "warning");
     const isZip = fileArr.length === 1 && fileArr[0].name.toLowerCase().endsWith(".zip");
     const dstFiles = fileArr.filter((f) => f.name.toLowerCase().endsWith(".dst"));
-    if (!isZip && dstFiles.length === 0) { showToast("No DST files found. Upload .dst files or a .zip containing them."); return; }
+    if (!isZip && dstFiles.length === 0) { showToast(t("err.no_dst")); return; }
     setDstLoading(true);
     const form = new FormData(); form.append("session_id", sessionId);
     if (isZip) { form.append("zip_file", fileArr[0]); setDstFileName(fileArr[0].name); }
@@ -336,18 +336,18 @@ export default function ComboBuilder() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data: DstResponse = await res.json();
       setDstData(data); setDstUploaded(true);
-      if (data.uploaded_count === 0) { showToast("No DST files found in the uploaded content"); setDstUploaded(false); }
+      if (data.uploaded_count === 0) { showToast(t("err.no_dst_content")); setDstUploaded(false); }
       else if (data.missing_programs.length > 0) {
         const missing = data.missing_programs.slice(0, 5).join(", ");
-        showToast(`Missing ${data.missing_programs.length} DST files: ${missing}${data.missing_programs.length > 5 ? " ..." : ""}`, "warning");
+        showToast(`${t("err.missing_dst").replace("{n}", String(data.missing_programs.length))}: ${missing}${data.missing_programs.length > 5 ? " ..." : ""}`, "warning");
       }
-    } catch (e) { showToast(`Upload failed: ${e instanceof Error ? e.message : "Connection error"}`); }
+    } catch (e) { showToast(`${t("err.upload_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
     setDstLoading(false);
-  }, [sessionId, showToast]);
+  }, [sessionId, showToast, t]);
 
   const handleExport = useCallback(async () => {
     if (!sessionId || selectedCombos.size === 0) return;
-    if (!dstUploaded) { showToast("Upload DST files before exporting"); return; }
+    if (!dstUploaded) { showToast(t("err.upload_dst_first")); return; }
     setExporting(true); setExportProgress(0); setDownloadUrl("");
     const form = new FormData();
     form.append("session_id", sessionId);
@@ -372,11 +372,11 @@ export default function ComboBuilder() {
       setExported(true);
       const a = document.createElement("a");
       a.href = url; a.download = `combos_${sessionName.replace(/\s+/g, "_")}.zip`; a.click();
-      showToast(`Exported ${res.headers.get("X-Export-Success") || selectedCombos.size} output files`, "success");
+      showToast(t("cb.export.success").replace("{n}", String(res.headers.get("X-Export-Success") || selectedCombos.size)), "success");
       fetchSessions();
-    } catch (e) { clearInterval(elapsedTimer); showToast(`Export failed: ${e instanceof Error ? e.message : "Connection error"}`); }
+    } catch (e) { clearInterval(elapsedTimer); showToast(`${t("err.export_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
     setExporting(false); setExportProgress(0);
-  }, [sessionId, selectedCombos, dstUploaded, sessionName, gapMm, columnGapMm, showToast, fetchSessions]);
+  }, [sessionId, selectedCombos, dstUploaded, sessionName, gapMm, columnGapMm, showToast, fetchSessions, t]);
 
   const loadSampleData = useCallback(async () => {
     setExcelLoading(true); resetSession();
@@ -387,17 +387,17 @@ export default function ComboBuilder() {
       setExcelFile("nameorder_04032026-2 add column.xlsx");
       applyParseData(data);
       if (data.dst_count > 0) { setDstUploaded(true); setDstFileName(`${data.dst_count} DST files`); setDstData({ session_id: data.session_id, uploaded_count: data.dst_count, needed_count: data.entries_count, missing_programs: [], all_matched: true }); }
-    } catch (e) { showToast(`${e instanceof Error ? e.message : "Failed to load sample data"}`); }
+    } catch (e) { showToast(`${e instanceof Error ? e.message : t("err.load_sample")}`); }
     setExcelLoading(false);
-  }, [applyParseData, resetSession, showToast]);
+  }, [applyParseData, resetSession, showToast, t]);
 
   const handleExcelDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setExcelDragOver(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
-    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast("Drop an Excel file (.xlsx or .xls)"); return; }
+    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.excel_drop")); return; }
     uploadExcel(file);
-  }, [uploadExcel, showToast]);
+  }, [uploadExcel, showToast, t]);
 
   const handleDstDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault(); setDstDragOver(false);
@@ -514,7 +514,7 @@ export default function ComboBuilder() {
                           <span className="text-sm font-medium truncate">{s.name}</span>
                           {s.exported && (
                             <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "var(--success)", color: "white" }}>
-                              Exported
+                              {t("cb.exported")}
                             </span>
                           )}
                         </div>
@@ -522,12 +522,12 @@ export default function ComboBuilder() {
                           <span className="text-[10px]" style={{ color: "var(--muted)" }}>{formatDate(s.created_at)}</span>
                           {s.entries_count > 0 && (
                             <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                              {s.entries_count} names
+                              {s.entries_count} {t("names")}
                             </span>
                           )}
                           {s.combo_count > 0 && (
                             <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                              {s.combo_count} combos
+                              {s.combo_count} {t("combos")}
                             </span>
                           )}
                         </div>
@@ -545,7 +545,7 @@ export default function ComboBuilder() {
                             setTimeout(() => setDeleteConfirm(null), 3000);
                           }
                         }}
-                        title={deleteConfirm === s.session_id ? "Click again to confirm" : "Delete session"}
+                        title={deleteConfirm === s.session_id ? t("cb.session.delete_confirm") : t("cb.session.delete")}
                       >
                         <span style={{ color: deleteConfirm === s.session_id ? "white" : "var(--muted)" }}>
                           {deleteConfirm === s.session_id ? "?" : "✕"}
@@ -559,7 +559,7 @@ export default function ComboBuilder() {
 
             {loadingSession && (
               <div className="flex items-center justify-center py-8">
-                <p className="text-sm" style={{ color: "var(--accent)" }}>Loading session...</p>
+                <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.session.loading")}</p>
               </div>
             )}
           </div>
@@ -583,7 +583,7 @@ export default function ComboBuilder() {
             style={{ background: showSessionDropdown ? "var(--surface)" : "transparent" }}
           >
             {sessionName}
-            {exported && <span className="text-[9px] font-medium px-1 py-0.5 rounded" style={{ background: "var(--success)", color: "white" }}>Exported</span>}
+            {exported && <span className="text-[9px] font-medium px-1 py-0.5 rounded" style={{ background: "var(--success)", color: "white" }}>{t("cb.exported")}</span>}
             <span className="text-[8px]" style={{ color: "var(--muted)" }}>▼</span>
           </button>
           {showSessionDropdown && (
@@ -604,15 +604,15 @@ export default function ComboBuilder() {
                   >
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium">{s.name}</span>
-                      {s.exported && <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "var(--success)", color: "white" }}>Exported</span>}
+                      {s.exported && <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "var(--success)", color: "white" }}>{t("cb.exported")}</span>}
                     </div>
                     <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                      {s.entries_count > 0 ? `${s.entries_count} names` : "empty"}
+                      {s.entries_count > 0 ? `${s.entries_count} ${t("names")}` : t("empty")}
                     </span>
                   </button>
                 ))}
                 {savedSessions.length === 0 && (
-                  <p className="text-[10px] px-3.5 py-2" style={{ color: "var(--muted)" }}>No sessions yet</p>
+                  <p className="text-[10px] px-3.5 py-2" style={{ color: "var(--muted)" }}>{t("cb.session.no_sessions")}</p>
                 )}
                 <div style={{ borderTop: "1px solid var(--border)", marginTop: "4px", paddingTop: "4px" }}>
                   <button
@@ -620,14 +620,14 @@ export default function ComboBuilder() {
                     style={{ color: "var(--muted)" }}
                     onClick={() => { setShowSessionDropdown(false); resetSession(); setExcelFile(""); setParseData(null); setSessionStarted(false); setSessionId(""); }}
                   >
-                    ← Back to sessions
+                    {t("cb.session.back")}
                   </button>
                   <button
                     className="w-full text-left px-3.5 py-2 text-[11px] font-medium transition-colors hover:bg-[var(--surface-hover)]"
                     style={{ color: "var(--accent)" }}
                     onClick={() => { setShowSessionDropdown(false); resetSession(); setExcelFile(""); setParseData(null); setSessionId(""); setSessionName(new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })); }}
                   >
-                    + New Session
+                    {t("cb.session.new")}
                   </button>
                 </div>
               </div>
@@ -665,7 +665,7 @@ export default function ComboBuilder() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ animation: "slideUp 0.4s ease 0.05s forwards", opacity: 0 }}>
           <div className={`drop-zone ${excelDragOver ? "drag-over" : ""} ${excelFile ? "has-file" : ""}`} onDragOver={(e) => { e.preventDefault(); setExcelDragOver(true); }} onDragLeave={() => setExcelDragOver(false)} onDrop={handleExcelDrop} onClick={() => excelInputRef.current?.click()}>
             <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadExcel(e.target.files[0]); e.target.value = ""; }} />
-            {excelLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>Parsing...</p>
+            {excelLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.excel.parsing")}</p>
             : excelFile ? (
               <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
                 <div className="flex items-center justify-center gap-2">
@@ -687,8 +687,8 @@ export default function ComboBuilder() {
 
           <div className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!sessionId ? "opacity-25 pointer-events-none" : ""}`} onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }} onDragLeave={() => setDstDragOver(false)} onDrop={handleDstDrop} onClick={() => sessionId && zipInputRef.current?.click()}>
             <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
-            {dstLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>Uploading...</p>
-            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.uploaded_count}/{dstData.needed_count} programs matched{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} missing</span>}</p></div>
+            {dstLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
+            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.uploaded_count}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</p></div>
             : <div><svg className="mx-auto mb-2.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p></div>}
           </div>
         </div>
@@ -752,15 +752,15 @@ export default function ComboBuilder() {
           <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
             <button onClick={() => setShowExcelPreview(!showExcelPreview)} className="text-[11px] flex items-center gap-1.5 mb-1" style={{ color: "var(--accent)" }}>
               <span className="text-[9px]">{showExcelPreview ? "▼" : "▶"}</span>
-              {showExcelPreview ? "Hide" : "View"} order data ({parseData.entries_count} rows)
+              {showExcelPreview ? t("cb.excel.hide") : t("cb.excel.view")} ({parseData.entries_count} {t("cb.excel.rows")})
             </button>
             {showExcelPreview && (
               <div className="glass-panel p-3 overflow-auto custom-scroll" style={{ animation: "fadeSlideIn 0.2s ease", maxHeight: "320px" }}>
                 <table className="w-full text-[10px]" style={{ fontFamily: "var(--font-geist-mono)" }}>
                   <thead className="sticky top-0" style={{ background: "var(--glass-strong)" }}>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      {["Program", "Name", "Title", "Qty", "Combo", "Machine", "→ Group"].map((h) => (
-                        <th key={h} className="text-left py-1.5 px-2 font-semibold" style={{ color: "var(--muted)" }}>{h}</th>
+                      {(["cb.table.program", "cb.table.name", "cb.table.title", "cb.table.qty", "cb.table.combo", "cb.table.machine", "cb.table.group"] as const).map((k) => (
+                        <th key={k} className="text-left py-1.5 px-2 font-semibold" style={{ color: "var(--muted)" }}>{t(k)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -779,7 +779,7 @@ export default function ComboBuilder() {
                   </tbody>
                 </table>
                 {parseData.entries_count > parseData.entries_preview.length && (
-                  <p className="text-[10px] mt-2 px-2" style={{ color: "var(--muted)" }}>Showing {parseData.entries_preview.length} of {parseData.entries_count} rows</p>
+                  <p className="text-[10px] mt-2 px-2" style={{ color: "var(--muted)" }}>{t("cb.excel.showing")} {parseData.entries_preview.length} {t("cb.excel.of")} {parseData.entries_count} {t("cb.excel.rows")}</p>
                 )}
               </div>
             )}
@@ -841,9 +841,9 @@ export default function ComboBuilder() {
                       <button className="w-full flex flex-col px-4 py-3 sm:py-2.5 text-left transition-colors" style={{ background: exp ? "var(--surface)" : "transparent" }} onClick={() => toggleGroup(gk)}>
                         <div className="flex items-center gap-2.5 w-full">
                           <span className="text-[10px] w-3" style={{ color: "var(--muted)" }}>{exp ? "▼" : "▶"}</span>
-                          <span className="text-xs font-medium">{group.machine_program}<span style={{ color: "var(--muted)", fontWeight: 400 }}> / Combo {group.com_no}</span></span>
+                          <span className="text-xs font-medium">{group.machine_program}<span style={{ color: "var(--muted)", fontWeight: 400 }}> / {t("Combo")} {group.com_no}</span></span>
                           <span className="text-[10px] ml-auto tabular-nums hidden sm:inline" style={{ color: "var(--muted)" }}>
-                            {group.entry_count} names → {group.combos.length} {group.combos.length === 1 ? "file" : "files"} ({group.total_slots} slots)
+                            {group.entry_count} {t("names")} → {group.combos.length} {group.combos.length === 1 ? t("file") : t("files")} ({group.total_slots} {t("slots")})
                           </span>
                           <span className="text-[10px] ml-auto tabular-nums sm:hidden" style={{ color: "var(--muted)" }}>
                             {group.combos.length}f
@@ -949,16 +949,27 @@ export default function ComboBuilder() {
             <div className="flex-1 min-w-0">
               {exporting && (
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="animate-spin w-4 h-4 border-2 rounded-full" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="relative w-5 h-5 shrink-0">
+                      <div className="absolute inset-0 rounded-full" style={{ border: "2px solid var(--border)" }} />
+                      <div className="absolute inset-0 rounded-full animate-spin" style={{ border: "2px solid transparent", borderTopColor: "var(--accent)" }} />
+                    </div>
                     <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
-                      {exportProgress === -1 ? t("cb.export.downloading") : `${t("cb.export.exporting")} — ${exportProgress}s`}
+                      {exportProgress === -1 ? t("cb.export.downloading") : `${t("cb.export.exporting")}...`}
+                    </p>
+                    {exportProgress > 0 && exportProgress !== -1 && (
+                      <span className="text-[11px] tabular-nums font-mono" style={{ color: "var(--accent)" }}>{exportProgress}{t("cb.export.elapsed")}</span>
+                    )}
+                  </div>
+                  <div className="progress-bar" style={{ height: "6px", overflow: "hidden", borderRadius: "3px" }}>
+                    <div style={{ width: "100%", height: "100%", background: `linear-gradient(90deg, var(--accent) 0%, var(--accent-light) 50%, var(--accent) 100%)`, backgroundSize: "200% 100%", animation: "shimmer 1.5s ease-in-out infinite", opacity: 0.6 }} />
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[10px]" style={{ color: "var(--muted)" }}>{t("cb.export.progress")}</p>
+                    <p className="text-[10px]" style={{ color: "var(--muted)" }}>
+                      {t("cb.export.estimate")} ~{Math.max(1, Math.ceil(selectedCombos.size * 6 / 60))} min
                     </p>
                   </div>
-                  <div className="progress-bar" style={{ height: "8px", overflow: "hidden" }}>
-                    <div style={{ width: "100%", height: "100%", background: "var(--accent)", opacity: 0.3, animation: "pulse 1.5s ease-in-out infinite" }} />
-                  </div>
-                  <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{t("cb.export.progress")}</p>
                 </div>
               )}
               {downloadUrl && !exporting && (

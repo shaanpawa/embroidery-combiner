@@ -109,14 +109,55 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.export.btn": { en: "Export", th: "ส่งออก" },
   "cb.export.files": { en: "Files", th: "ไฟล์" },
   "cb.export.file": { en: "File", th: "ไฟล์" },
-  "cb.export.exporting": { en: "Exporting...", th: "กำลังส่งออก..." },
-  "cb.export.progress": { en: "Combining files on server... this may take 1-2 minutes", th: "กำลังรวมไฟล์บนเซิร์ฟเวอร์... อาจใช้เวลา 1-2 นาที" },
-  "cb.export.downloading": { en: "Downloading...", th: "กำลังดาวน์โหลด..." },
+  "cb.export.exporting": { en: "Combining files", th: "กำลังรวมไฟล์" },
+  "cb.export.elapsed": { en: "s elapsed", th: "วินาทีผ่านไป" },
+  "cb.export.estimate": { en: "Estimated time:", th: "เวลาโดยประมาณ:" },
+  "cb.export.progress": { en: "Server is combining your DST files — please wait, do not close this page", th: "เซิร์ฟเวอร์กำลังรวมไฟล์ DST — กรุณารอ อย่าปิดหน้านี้" },
+  "cb.export.downloading": { en: "Downloading zip...", th: "กำลังดาวน์โหลด zip..." },
   "cb.export.done": { en: "Downloaded", th: "ดาวน์โหลดแล้ว" },
   "cb.export.again": { en: "Download again", th: "ดาวน์โหลดอีกครั้ง" },
   "cb.export.previous": { en: "Previously exported", th: "ส่งออกก่อนหน้านี้แล้ว" },
   "cb.export.need_dst": { en: "Upload DST files to enable export", th: "อัปโหลดไฟล์ DST เพื่อเปิดใช้งานการส่งออก" },
   "cb.exported": { en: "Exported", th: "ส่งออกแล้ว" },
+  "cb.export.success": { en: "Exported {n} output files", th: "ส่งออก {n} ไฟล์สำเร็จ" },
+
+  // Error messages
+  "err.excel_format": { en: "Please upload an Excel file (.xlsx or .xls)", th: "กรุณาอัปโหลดไฟล์ Excel (.xlsx หรือ .xls)" },
+  "err.excel_read": { en: "Failed to read Excel", th: "ไม่สามารถอ่านไฟล์ Excel" },
+  "err.excel_drop": { en: "Drop an Excel file (.xlsx or .xls)", th: "ลากไฟล์ Excel (.xlsx หรือ .xls)" },
+  "err.no_entries": { en: "No valid entries found with this column mapping. Try adjusting the columns.", th: "ไม่พบข้อมูลที่ถูกต้อง ลองปรับคอลัมน์ใหม่" },
+  "err.parse_fail": { en: "Failed to parse Excel", th: "ไม่สามารถอ่านข้อมูล Excel" },
+  "err.upload_excel_first": { en: "Upload an Excel order first", th: "อัปโหลดไฟล์ Excel คำสั่งซื้อก่อน" },
+  "err.ngs_skipped": { en: "NGS file(s) skipped — convert to DST first", th: "ข้ามไฟล์ NGS — แปลงเป็น DST ก่อน" },
+  "err.no_dst": { en: "No DST files found. Upload .dst files or a .zip containing them.", th: "ไม่พบไฟล์ DST อัปโหลดไฟล์ .dst หรือ .zip" },
+  "err.no_dst_content": { en: "No DST files found in the uploaded content", th: "ไม่พบไฟล์ DST ในไฟล์ที่อัปโหลด" },
+  "err.missing_dst": { en: "Missing {n} DST files", th: "ไม่พบไฟล์ DST {n} ไฟล์" },
+  "err.upload_fail": { en: "Upload failed", th: "อัปโหลดไม่สำเร็จ" },
+  "err.upload_dst_first": { en: "Upload DST files before exporting", th: "อัปโหลดไฟล์ DST ก่อนส่งออก" },
+  "err.export_fail": { en: "Export failed", th: "ส่งออกไม่สำเร็จ" },
+  "err.connection": { en: "Connection error", th: "เชื่อมต่อไม่ได้" },
+  "err.load_session": { en: "Failed to load session", th: "โหลดเซสชันไม่สำเร็จ" },
+  "err.delete_session": { en: "Failed to delete session", th: "ลบเซสชันไม่สำเร็จ" },
+  "err.load_sample": { en: "Failed to load sample data", th: "โหลดข้อมูลตัวอย่างไม่สำเร็จ" },
+
+  // Success messages
+  "ok.session_deleted": { en: "Session deleted", th: "ลบเซสชันแล้ว" },
+  "ok.excel_removed": { en: "Excel data removed", th: "ลบข้อมูล Excel แล้ว" },
+  "ok.warnings": { en: "warning(s) during parsing", th: "คำเตือนระหว่างอ่านข้อมูล" },
+
+  // Session picker extras
+  "cb.session.no_sessions": { en: "No sessions yet", th: "ยังไม่มีเซสชัน" },
+  "cb.session.delete_confirm": { en: "Click again to confirm", th: "คลิกอีกครั้งเพื่อยืนยัน" },
+  "cb.session.delete": { en: "Delete session", th: "ลบเซสชัน" },
+
+  // Excel preview table headers
+  "cb.table.program": { en: "Program", th: "โปรแกรม" },
+  "cb.table.name": { en: "Name", th: "ชื่อ" },
+  "cb.table.title": { en: "Title", th: "ตำแหน่ง" },
+  "cb.table.qty": { en: "Qty", th: "จำนวน" },
+  "cb.table.combo": { en: "Combo", th: "คอมโบ" },
+  "cb.table.machine": { en: "Machine", th: "เครื่อง" },
+  "cb.table.group": { en: "→ Group", th: "→ กลุ่ม" },
 
   // Nav
   "nav.signout": { en: "Sign out", th: "ออกจากระบบ" },
@@ -126,6 +167,10 @@ const translations: Record<string, Record<Lang, string>> = {
   "combos": { en: "combos", th: "คอมโบ" },
   "empty": { en: "empty", th: "ว่าง" },
   "Combo": { en: "Combo", th: "คอมโบ" },
+  "file": { en: "file", th: "ไฟล์" },
+  "files": { en: "files", th: "ไฟล์" },
+  "of": { en: "of", th: "จาก" },
+  "slots": { en: "slots", th: "ช่อง" },
 };
 
 const I18nCtx = createContext<I18nContext>({
