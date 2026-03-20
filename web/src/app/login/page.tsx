@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import Image from "next/image";
 import { useLanguage } from "../i18n";
+import { useTheme } from "../theme-provider";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -14,6 +15,7 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(error);
   const { lang, toggle, t } = useLanguage();
+  const { theme, toggle: toggleTheme } = useTheme();
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,13 +37,13 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6">
-      {/* Language toggle */}
-      <button
-        onClick={toggle}
-        className="nav-btn fixed top-4 right-4 z-50"
-      >
-        {lang === "en" ? "TH" : "EN"}
-      </button>
+      {/* Top-right controls */}
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <button onClick={toggle} className="nav-btn">
+          {lang === "en" ? "TH" : "EN"}
+        </button>
+        <button onClick={toggleTheme} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
+      </div>
 
       {/* Logo */}
       <div className="text-center mb-10" style={{ animation: "slideUp 0.6s ease forwards" }}>

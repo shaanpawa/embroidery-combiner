@@ -74,13 +74,13 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.mapping.field.name_line2": { en: "2nd Line", th: "บรรทัดที่ 2" },
   "cb.mapping.field.quantity": { en: "Quantity", th: "จำนวน" },
   "cb.mapping.field.com_no": { en: "Combo No", th: "เลขคอมโบ" },
-  "cb.mapping.field.machine_program": { en: "Machine", th: "เครื่อง" },
+  "cb.mapping.field.machine_program": { en: "MA", th: "MA" },
   "cb.mapping.help.program": { en: "DST file number (e.g., 42 = 42.DST)", th: "เลขไฟล์ DST (เช่น 42 = 42.DST)" },
   "cb.mapping.help.name_line1": { en: "Name to be embroidered", th: "ชื่อที่จะปัก" },
   "cb.mapping.help.name_line2": { en: "Second line — last name, title, organization (optional)", th: "บรรทัดที่ 2 — นามสกุล, ตำแหน่ง, องค์กร (ไม่บังคับ)" },
   "cb.mapping.help.quantity": { en: "How many copies of this name", th: "จำนวนสำเนาของชื่อนี้" },
   "cb.mapping.help.com_no": { en: "Names with same number go in the same output file", th: "ชื่อที่มีเลขเดียวกันจะรวมอยู่ในไฟล์เดียวกัน" },
-  "cb.mapping.help.machine_program": { en: "Machine program code (e.g., MA50310)", th: "รหัสโปรแกรมเครื่อง (เช่น MA50310)" },
+  "cb.mapping.help.machine_program": { en: "MA code (e.g., MA50310)", th: "รหัส MA (เช่น MA50310)" },
 
   // Stats
   "cb.stats.names": { en: "NAMES", th: "ชื่อ" },
@@ -161,7 +161,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.table.title": { en: "2nd Line", th: "บรรทัดที่ 2" },
   "cb.table.qty": { en: "Qty", th: "จำนวน" },
   "cb.table.combo": { en: "Combo", th: "คอมโบ" },
-  "cb.table.machine": { en: "Machine", th: "เครื่อง" },
+  "cb.table.machine": { en: "MA", th: "MA" },
   "cb.table.group": { en: "→ Group", th: "→ กลุ่ม" },
 
   // Nav
