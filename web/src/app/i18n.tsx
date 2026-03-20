@@ -47,7 +47,10 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.session.new": { en: "+ New Session", th: "+ เซสชันใหม่" },
 
   // Combo Builder - Workflow
-  "cb.subtitle": { en: "Upload an Excel order and DST programs to generate combo files", th: "อัปโหลดไฟล์ Excel คำสั่งซื้อและโปรแกรม DST เพื่อสร้างไฟล์คอมโบ" },
+  "cb.subtitle": { en: "Step 1: Upload Excel order → Step 2: Upload DST zip → Step 3: Export combo files", th: "ขั้นตอน 1: อัปโหลด Excel → ขั้นตอน 2: อัปโหลด DST zip → ขั้นตอน 3: ส่งออกไฟล์คอมโบ" },
+  "cb.step1": { en: "Step 1", th: "ขั้นตอน 1" },
+  "cb.step2": { en: "Step 2", th: "ขั้นตอน 2" },
+  "cb.step3": { en: "Step 3", th: "ขั้นตอน 3" },
   "cb.excel.title": { en: "Order Excel", th: "ไฟล์ Excel คำสั่งซื้อ" },
   "cb.excel.hint": { en: "Drop .xlsx or click to browse", th: "ลาก .xlsx หรือคลิกเพื่อเลือกไฟล์" },
   "cb.excel.parsing": { en: "Parsing...", th: "กำลังอ่าน..." },
