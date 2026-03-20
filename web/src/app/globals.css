@@ -258,6 +258,10 @@ input:focus, textarea:focus, select:focus { outline: none; }
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+@keyframes bobble {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
 
 /* ═══ Scrollbar ═══ */
 .custom-scroll::-webkit-scrollbar { width: 5px; }
@@ -292,6 +296,26 @@ input:focus, textarea:focus, select:focus { outline: none; }
 /* ═══ Progress ═══ */
 .progress-bar { height: 4px; background: var(--surface); border-radius: 2px; overflow: hidden; }
 .progress-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
+
+/* ═══ Nav Buttons ═══ */
+.nav-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.nav-btn:hover { background: var(--surface-hover); transform: scale(1.05); color: var(--foreground); }
 
 /* ═══ Theme Toggle ═══ */
 .theme-toggle {

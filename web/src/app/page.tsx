@@ -13,7 +13,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col items-center justify-center px-6 relative">
       {/* Top-right controls */}
       <div className="fixed top-6 right-6 flex items-center gap-2 z-50" style={{ animation: "fadeIn 0.5s ease 0.4s forwards", opacity: 0 }}>
-        <button onClick={toggleLang} className="text-[10px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}>
+        <button onClick={toggleLang} className="nav-btn">
           {lang === "en" ? "TH" : "EN"}
         </button>
         <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
@@ -66,9 +66,7 @@ export default function Home() {
         </div>
       </div>
 
-      <p className="mt-16 text-[10px] uppercase tracking-widest" style={{ color: "var(--border-strong)", animation: "fadeIn 0.6s ease 0.4s forwards", opacity: 0 }}>
-        {t("home.footer")}
-      </p>
+      {/* Footer removed — branding already in header */}
     </div>
   );
 }

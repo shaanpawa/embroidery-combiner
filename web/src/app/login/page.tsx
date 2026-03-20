@@ -38,8 +38,7 @@ function LoginContent() {
       {/* Language toggle */}
       <button
         onClick={toggle}
-        className="fixed top-4 right-4 text-[10px] font-semibold px-3 py-1.5 rounded-lg z-50"
-        style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}
+        className="nav-btn fixed top-4 right-4 z-50"
       >
         {lang === "en" ? "TH" : "EN"}
       </button>

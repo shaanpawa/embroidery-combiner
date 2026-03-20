@@ -451,7 +451,7 @@ export default function ComboBuilder() {
         <nav className="flex items-center gap-4 px-6 py-3.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
           <Link href="/"><Image src="/micro-logo.svg" alt="Micro" width={56} height={16} className="micro-logo opacity-40 hover:opacity-70 transition-opacity" /></Link>
           <div className="flex-1" />
-          <button onClick={toggleLang} className="text-[10px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}>{lang === "en" ? "TH" : "EN"}</button>
+          <button onClick={toggleLang} className="nav-btn">{lang === "en" ? "TH" : "EN"}</button>
           <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
           <div className="hidden sm:flex items-center gap-1.5">
             <Image src="/ossia-mark.svg?v2" alt="" width={20} height={20} className="micro-logo" />
@@ -488,14 +488,8 @@ export default function ComboBuilder() {
               </button>
             </div>
 
-            {/* Demo shortcut */}
-            <button
-              onClick={startDemoSession}
-              className="w-full text-center text-[11px] py-2 rounded-xl transition-colors mb-8"
-              style={{ color: "var(--accent)", background: "var(--accent-glow)" }}
-            >
-              {t("cb.session.demo")}
-            </button>
+            {/* Spacer before previous sessions */}
+            <div className="mb-4" />
 
             {/* Existing Sessions */}
             {savedSessions.length > 0 && (
@@ -640,16 +634,15 @@ export default function ComboBuilder() {
         {session?.user && (
           <button
             onClick={() => { clearAuthToken(); signOut({ callbackUrl: "/login" }); }}
-            className="text-[10px] font-semibold px-3 py-1.5 rounded-lg transition-colors"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}
+            className="nav-btn"
             title={session.user.email || ""}
           >
             <span className="hidden sm:inline">{session.user.name || "O"}</span>
             <span className="sm:hidden">{(session.user.name || "O").charAt(0).toUpperCase()}</span>
-            <span className="ml-1.5" style={{ fontSize: "9px" }}>{t("nav.signout")}</span>
+            <span style={{ fontSize: "9px" }}>{t("nav.signout")}</span>
           </button>
         )}
-        <button onClick={toggleLang} className="text-[10px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}>{lang === "en" ? "TH" : "EN"}</button>
+        <button onClick={toggleLang} className="nav-btn">{lang === "en" ? "TH" : "EN"}</button>
         <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
         <div className="hidden sm:flex items-center gap-1.5">
           <Image src="/ossia-mark.svg?v2" alt="" width={20} height={20} className="micro-logo" />
@@ -950,27 +943,33 @@ export default function ComboBuilder() {
           <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
             <div className="flex-1 min-w-0">
               {exporting && (
-                <div>
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <div className="relative w-5 h-5 shrink-0">
-                      <div className="absolute inset-0 rounded-full" style={{ border: "2px solid var(--border)" }} />
-                      <div className="absolute inset-0 rounded-full animate-spin" style={{ border: "2px solid transparent", borderTopColor: "var(--accent)" }} />
+                <div className="flex items-center gap-4">
+                  {/* ASCII sewing machine mascot */}
+                  <pre className="text-[10px] leading-[1.15] shrink-0 hidden sm:block" style={{ fontFamily: "var(--font-geist-mono)", color: "var(--accent)", animation: "bobble 2s ease-in-out infinite" }}>{
+                    exportProgress === -1
+                      ? `  ,___,\n  (o.o)\n  / > >\n  \\_|_/\n   ~~~`
+                      : exportProgress % 2 === 0
+                        ? `  ,___,\n  (o.o)\n  />  >\n  \\_|_/\n   ~ ~`
+                        : `  ,___,\n  (o.o)\n  <  <\\\n  \\_|_/\n   ~ ~`
+                  }</pre>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+                        {exportProgress === -1 ? t("cb.export.downloading") : `${t("cb.export.exporting")}...`}
+                      </p>
+                      {exportProgress > 0 && exportProgress !== -1 && (
+                        <span className="text-[11px] tabular-nums font-mono" style={{ color: "var(--accent)" }}>{exportProgress}{t("cb.export.elapsed")}</span>
+                      )}
                     </div>
-                    <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
-                      {exportProgress === -1 ? t("cb.export.downloading") : `${t("cb.export.exporting")}...`}
-                    </p>
-                    {exportProgress > 0 && exportProgress !== -1 && (
-                      <span className="text-[11px] tabular-nums font-mono" style={{ color: "var(--accent)" }}>{exportProgress}{t("cb.export.elapsed")}</span>
-                    )}
-                  </div>
-                  <div className="progress-bar" style={{ height: "6px", overflow: "hidden", borderRadius: "3px" }}>
-                    <div style={{ width: "100%", height: "100%", background: `linear-gradient(90deg, var(--accent) 0%, var(--accent-light) 50%, var(--accent) 100%)`, backgroundSize: "200% 100%", animation: "shimmer 1.5s ease-in-out infinite", opacity: 0.6 }} />
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
-                    <p className="text-[10px]" style={{ color: "var(--muted)" }}>{t("cb.export.progress")}</p>
-                    <p className="text-[10px]" style={{ color: "var(--muted)" }}>
-                      {(() => { const avg = parseData ? parseData.total_slots / Math.max(1, parseData.combo_count) : 10; const spc = avg <= 10 ? 5 : 8; return `${t("cb.export.estimate")} ~${Math.max(1, Math.ceil(selectedCombos.size * spc / 60))} min`; })()}
-                    </p>
+                    <div className="progress-bar" style={{ height: "6px", overflow: "hidden", borderRadius: "3px" }}>
+                      <div style={{ width: "100%", height: "100%", background: `linear-gradient(90deg, var(--accent) 0%, var(--accent-light) 50%, var(--accent) 100%)`, backgroundSize: "200% 100%", animation: "shimmer 1.5s ease-in-out infinite", opacity: 0.6 }} />
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-[10px]" style={{ color: "var(--muted)" }}>{t("cb.export.progress")}</p>
+                      <p className="text-[10px]" style={{ color: "var(--muted)" }}>
+                        {(() => { const avg = parseData ? parseData.total_slots / Math.max(1, parseData.combo_count) : 10; const spc = avg <= 10 ? 5 : 8; return `${t("cb.export.estimate")} ~${Math.max(1, Math.ceil(selectedCombos.size * spc / 60))} min`; })()}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
