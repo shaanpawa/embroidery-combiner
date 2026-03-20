@@ -16,6 +16,23 @@ class CombineError(Exception):
     pass
 
 
+def _strip_trailing_footer(stitches):
+    """Strip trailing TRIM + JUMPs + END from a design's stitch list.
+
+    Individual DST files end with: [stitching] → TRIM → JUMPs → END
+    When combining, this footer must be removed so designs join cleanly
+    with just a COLOR_CHANGE between them. Truncate at the last STITCH.
+    """
+    last_stitch = -1
+    for i in range(len(stitches) - 1, -1, -1):
+        if stitches[i][2] == pyembroidery.STITCH:
+            last_stitch = i
+            break
+    if last_stitch < 0:
+        return [s for s in stitches if s[2] != pyembroidery.END]
+    return stitches[:last_stitch + 1]
+
+
 def _strip_extra_color_changes(pattern: pyembroidery.EmbPattern, num_designs: int) -> None:
     """Remove duplicate/spurious COLOR_CHANGE commands if any exist.
 
@@ -82,7 +99,7 @@ def _stack_vertical(
         raise CombineError("No files to stack")
 
     combined = _read_design(dst_files[0])
-    combined.stitches = [s for s in combined.stitches if s[2] != pyembroidery.END]
+    combined.stitches = _strip_trailing_footer(combined.stitches)
 
     for i, path in enumerate(dst_files[1:], 1):
         design = _read_design(path)
@@ -97,7 +114,7 @@ def _stack_vertical(
 
         y_offset = c_ext[3] - d_ext[1] + gap
         design.translate(0, y_offset)
-        design.stitches = [s for s in design.stitches if s[2] != pyembroidery.END]
+        design.stitches = _strip_trailing_footer(design.stitches)
 
         # Between designs: COLOR_CHANGE (needle switch green→red) + JUMPs to next position.
         # NO TRIM — matches reference combo files. Machine should NOT cut thread between names.
@@ -235,7 +252,7 @@ def combine_designs_two_column(
     y_offset = l_ext[1] - r_ext[1]
 
     right_pattern.translate(x_offset, y_offset)
-    right_pattern.stitches = [s for s in right_pattern.stitches if s[2] != pyembroidery.END]
+    right_pattern.stitches = _strip_trailing_footer(right_pattern.stitches)
 
     # Merge right column into left — COLOR_CHANGE (needle switch) + JUMPs, no TRIM
     left_pattern.add_command(pyembroidery.COLOR_CHANGE)
