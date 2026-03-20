@@ -4,6 +4,7 @@ Handles Excel parsing, DST file uploads, and combo export.
 Sessions are persisted in SQLite via database.py.
 """
 
+import asyncio
 import json
 import os
 import shutil
@@ -342,9 +343,11 @@ async def export_endpoint(
     dst_dir = get_dst_dir(session_id)
 
     # Export to temp dir first — only replace output_dir on success
+    # Run CPU-bound combining in a thread so we don't block the event loop
     tmp_dir = tempfile.mkdtemp(prefix="combo_export_")
     try:
-        results = export_all(
+        results = await asyncio.to_thread(
+            export_all,
             combos_to_export, dst_dir, tmp_dir,
             gap_mm=gap_mm, column_gap_mm=column_gap_mm, overwrite=True,
         )

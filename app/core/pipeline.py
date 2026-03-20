@@ -3,12 +3,14 @@ Pipeline orchestrator: maps Excel combo files to DST files and exports combined 
 """
 
 import os
+import shutil
+import tempfile
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from app.core.combiner import (
     CombineError, combine_designs_two_column, save_combined,
-    validate_combined_output,
+    validate_pattern_in_memory,
 )
 from app.core.excel_parser import ComboFile
 
@@ -92,8 +94,9 @@ def export_combo(
             gap_mm=gap_mm,
             column_gap_mm=column_gap_mm,
         )
+        # Validate from memory (no disk re-read — saves ~25% time per combo)
+        validation = validate_pattern_in_memory(pattern)
         save_combined(pattern, output_path, overwrite=overwrite)
-        validation = validate_combined_output(output_path)
         return ExportResult(
             combo=combo, success=True,
             output_path=output_path, validation=validation,
@@ -111,7 +114,7 @@ def export_all(
     overwrite: bool = False,
     progress_callback: Optional[Callable] = None,
 ) -> List[ExportResult]:
-    """Export multiple combo files. Returns results per file."""
+    """Export multiple combo files."""
     results = []
     for i, combo in enumerate(combos):
         result = export_combo(combo, dst_folder, output_folder, gap_mm, column_gap_mm, overwrite)

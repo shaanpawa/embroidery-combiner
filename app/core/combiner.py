@@ -316,3 +316,25 @@ def validate_combined_output(output_path: str) -> dict:
         "width_mm": (ext[2] - ext[0]) / 10.0,
         "height_mm": (ext[3] - ext[1]) / 10.0,
     }
+
+
+def validate_pattern_in_memory(pattern: pyembroidery.EmbPattern) -> dict:
+    """Compute validation stats from an in-memory pattern (no disk re-read)."""
+    if pattern is None or len(pattern.stitches) == 0:
+        return {"valid": False, "error": "Empty pattern"}
+
+    ext = pattern.extents()
+    if ext is None:
+        return {"valid": False, "error": "Cannot determine dimensions"}
+
+    cc_count = sum(1 for s in pattern.stitches if s[2] == pyembroidery.COLOR_CHANGE)
+
+    return {
+        "valid": True,
+        "stitch_count": len(pattern.stitches),
+        "color_count": cc_count,
+        "width_mm": (ext[2] - ext[0]) / 10.0,
+        "height_mm": (ext[3] - ext[1]) / 10.0,
+    }
+
+
