@@ -6,7 +6,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "../theme-provider";
 import { useLanguage } from "../i18n";
-import { authFetch, clearAuthToken } from "@/lib/api";
+import { authFetch, clearAuthToken, warmupBackend } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -126,8 +126,8 @@ export default function ComboBuilder() {
     } catch { /* ignore */ }
   }, []);
 
-  // Fetch sessions on mount
-  useEffect(() => { fetchSessions(); }, [fetchSessions]);
+  // Fetch sessions + warm up backend on mount (wakes Render free tier from sleep)
+  useEffect(() => { fetchSessions(); warmupBackend(API); }, [fetchSessions]);
 
   // Save session name to server when it changes
   const saveSessionName = useCallback(async (sid: string, name: string) => {
@@ -348,33 +348,34 @@ export default function ComboBuilder() {
   const handleExport = useCallback(async () => {
     if (!sessionId || selectedCombos.size === 0) return;
     if (!dstUploaded) { showToast("Upload DST files before exporting"); return; }
-    setExporting(true); setExportProgress(5); setDownloadUrl("");
+    setExporting(true); setExportProgress(0); setDownloadUrl("");
     const form = new FormData();
     form.append("session_id", sessionId);
     form.append("selected_filenames", Array.from(selectedCombos).join(","));
     form.append("gap_mm", String(gapMm));
     form.append("column_gap_mm", String(columnGapMm));
-    // Animate progress while waiting for server (export can take 1-3 min on free tier)
-    let progress = 5;
-    const progressInterval = setInterval(() => {
-      progress = Math.min(progress + 0.5, 85);
-      setExportProgress(Math.round(progress));
+    // Track elapsed time for user feedback
+    const startTime = Date.now();
+    const elapsedTimer = setInterval(() => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      setExportProgress(elapsed); // Use as seconds counter, not percentage
     }, 1000);
     try {
-      const res = await authFetch(`${API}/api/export`, { method: "POST", body: form });
-      clearInterval(progressInterval);
+      // Export can take 2-3 min on free tier — use 5 min timeout
+      const res = await authFetch(`${API}/api/export`, { method: "POST", body: form }, 300_000);
+      clearInterval(elapsedTimer);
       if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
-      setExportProgress(90);
+      setExportProgress(-1); // Signal: downloading
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      setDownloadUrl(url); setExportProgress(100);
+      setDownloadUrl(url); setExportProgress(-2); // Signal: complete
       setExported(true);
       const a = document.createElement("a");
       a.href = url; a.download = `combos_${sessionName.replace(/\s+/g, "_")}.zip`; a.click();
       showToast(`Exported ${res.headers.get("X-Export-Success") || selectedCombos.size} output files`, "success");
       fetchSessions();
-    } catch (e) { clearInterval(progressInterval); showToast(`Export failed: ${e instanceof Error ? e.message : "Connection error"}`); }
-    setExporting(false);
+    } catch (e) { clearInterval(elapsedTimer); showToast(`Export failed: ${e instanceof Error ? e.message : "Connection error"}`); }
+    setExporting(false); setExportProgress(0);
   }, [sessionId, selectedCombos, dstUploaded, sessionName, gapMm, columnGapMm, showToast, fetchSessions]);
 
   const loadSampleData = useCallback(async () => {
@@ -950,10 +951,12 @@ export default function ComboBuilder() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <div className="animate-spin w-4 h-4 border-2 rounded-full" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
-                    <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>{t("cb.export.exporting")} {exportProgress}%</p>
+                    <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+                      {exportProgress === -1 ? t("cb.export.downloading") : `${t("cb.export.exporting")} — ${exportProgress}s`}
+                    </p>
                   </div>
-                  <div className="progress-bar" style={{ height: "8px" }}>
-                    <div className="progress-bar-fill" style={{ width: `${exportProgress}%`, transition: "width 1s ease" }} />
+                  <div className="progress-bar" style={{ height: "8px", overflow: "hidden" }}>
+                    <div style={{ width: "100%", height: "100%", background: "var(--accent)", opacity: 0.3, animation: "pulse 1.5s ease-in-out infinite" }} />
                   </div>
                   <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{t("cb.export.progress")}</p>
                 </div>

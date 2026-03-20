@@ -111,6 +111,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.export.file": { en: "File", th: "ไฟล์" },
   "cb.export.exporting": { en: "Exporting...", th: "กำลังส่งออก..." },
   "cb.export.progress": { en: "Combining files on server... this may take 1-2 minutes", th: "กำลังรวมไฟล์บนเซิร์ฟเวอร์... อาจใช้เวลา 1-2 นาที" },
+  "cb.export.downloading": { en: "Downloading...", th: "กำลังดาวน์โหลด..." },
   "cb.export.done": { en: "Downloaded", th: "ดาวน์โหลดแล้ว" },
   "cb.export.again": { en: "Download again", th: "ดาวน์โหลดอีกครั้ง" },
   "cb.export.previous": { en: "Previously exported", th: "ส่งออกก่อนหน้านี้แล้ว" },

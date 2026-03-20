@@ -20,7 +20,8 @@ async function getToken(): Promise<string | null> {
 
 export async function authFetch(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs: number = 120_000, // 2 minute default timeout
 ): Promise<Response> {
   const token = await getToken();
   const headers = new Headers(options.headers);
@@ -28,7 +29,21 @@ export async function authFetch(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(url, { ...options, headers });
+  // Timeout via AbortController — prevents infinite hangs if backend is cold/down
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers, signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("Request timed out — server may be starting up. Try again in 30 seconds.");
+    }
+    throw new Error("Cannot reach server. Check your internet connection.");
+  }
+  clearTimeout(timer);
 
   if (res.status === 401 || res.status === 403) {
     cachedToken = null;
@@ -44,4 +59,17 @@ export async function authFetch(
 export function clearAuthToken() {
   cachedToken = null;
   tokenFetchedAt = 0;
+}
+
+/**
+ * Ping the backend to wake it up (Render free tier sleeps after 15min).
+ * Call this early (e.g. on page load) so the backend is warm by the time
+ * the user uploads files.
+ */
+export async function warmupBackend(apiUrl: string): Promise<void> {
+  try {
+    await fetch(`${apiUrl}/api/health`, { method: "GET", mode: "cors" });
+  } catch {
+    // Ignore — best effort
+  }
 }

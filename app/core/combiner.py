@@ -17,39 +17,34 @@ class CombineError(Exception):
 
 
 def _strip_extra_color_changes(pattern: pyembroidery.EmbPattern, num_designs: int) -> None:
-    """Remove only the extra COLOR_CHANGE commands inserted by add_pattern().
+    """Remove duplicate/spurious COLOR_CHANGE commands if any exist.
 
-    Each individual name DST has exactly 1 internal COLOR_CHANGE (e.g. red→green).
-    When add_pattern() merges designs, it injects 1 extra COLOR_CHANGE at each
-    boundary. We keep the N internal ones and remove the N-1 extras.
+    Each individual name DST has exactly 1 internal COLOR_CHANGE (red→green).
+    Between designs, add_pattern() inserts 1 COLOR_CHANGE which is the correct
+    needle switch (green→red for the next name). So the expected count is:
+      N internal + (N-1) between = 2N-1 total COLOR_CHANGEs.
 
-    Strategy: each design contributes 1 COLOR_CHANGE. add_pattern() adds 1 more
-    between each pair. So we see pairs of COLOR_CHANGE at boundaries — the extra
-    one is always the first of the pair (injected by add_pattern before the
-    design's own stitches). We keep every other COLOR_CHANGE starting from the
-    first real one.
+    This function is a safety net: if add_pattern() inserts extra CCs beyond
+    what's expected (e.g., consecutive CCs with no stitches between them),
+    remove the duplicates.
     """
     if num_designs <= 1:
-        return  # Nothing to strip for a single design
+        return
 
     # Find all COLOR_CHANGE indices
     cc_indices = [i for i, s in enumerate(pattern.stitches) if s[2] == pyembroidery.COLOR_CHANGE]
 
-    # We expect num_designs internal + (num_designs - 1) extras = 2*num_designs - 1 total
-    # The extras are the ones add_pattern() inserted at boundaries.
-    # Pattern: [design1 stitches] [CC_internal_1] [TRIM] [CC_extra_1] [design2 stitches] [CC_internal_2] ...
-    # The extra CC is always right after a TRIM (at the boundary).
-    # So: remove any COLOR_CHANGE that immediately follows a TRIM command.
+    # Remove consecutive COLOR_CHANGEs (keep only the first of any run)
     to_remove = set()
-    for idx in cc_indices:
-        # Look backwards for the nearest non-NOP/non-SEQUENCE_BREAK command
-        for prev in range(idx - 1, -1, -1):
-            cmd = pattern.stitches[prev][2]
-            if cmd == pyembroidery.TRIM:
-                to_remove.add(idx)
+    for i in range(1, len(cc_indices)):
+        # Check if there are any STITCH commands between consecutive CCs
+        has_stitch = False
+        for j in range(cc_indices[i-1] + 1, cc_indices[i]):
+            if pattern.stitches[j][2] == pyembroidery.STITCH:
+                has_stitch = True
                 break
-            elif cmd in (pyembroidery.STITCH, pyembroidery.JUMP, pyembroidery.COLOR_CHANGE):
-                break  # Not after a TRIM, keep it
+        if not has_stitch:
+            to_remove.add(cc_indices[i])  # Duplicate CC, remove it
 
     if to_remove:
         pattern.stitches = [s for i, s in enumerate(pattern.stitches) if i not in to_remove]
@@ -104,7 +99,9 @@ def _stack_vertical(
         design.translate(0, y_offset)
         design.stitches = [s for s in design.stitches if s[2] != pyembroidery.END]
 
-        combined.add_command(pyembroidery.TRIM)
+        # Between designs: COLOR_CHANGE (needle switch green→red) + JUMPs to next position.
+        # NO TRIM — matches reference combo files. Machine should NOT cut thread between names.
+        combined.add_command(pyembroidery.COLOR_CHANGE)
         combined.add_pattern(design)
 
         if progress_callback:
@@ -240,8 +237,8 @@ def combine_designs_two_column(
     right_pattern.translate(x_offset, y_offset)
     right_pattern.stitches = [s for s in right_pattern.stitches if s[2] != pyembroidery.END]
 
-    # Merge right into left
-    left_pattern.add_command(pyembroidery.TRIM)
+    # Merge right column into left — COLOR_CHANGE (needle switch) + JUMPs, no TRIM
+    left_pattern.add_command(pyembroidery.COLOR_CHANGE)
     left_pattern.add_pattern(right_pattern)
     _strip_extra_color_changes(left_pattern, len(left_files) + len(right_files))
     left_pattern.add_command(pyembroidery.END)

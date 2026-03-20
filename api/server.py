@@ -32,6 +32,13 @@ from api.auth import get_current_user
 
 app = FastAPI(title="Micro Automation API")
 
+
+@app.get("/api/health")
+async def health():
+    """Health check — also used to wake up Render free tier before user needs it."""
+    return {"status": "ok"}
+
+
 # CORS: allow localhost for dev + production frontend URL from env
 _cors_origins = ["http://localhost:3000", "http://localhost:5123"]
 _frontend_url = os.environ.get("FRONTEND_URL")
