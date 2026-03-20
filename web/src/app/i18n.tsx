@@ -56,6 +56,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.dst.hint_disabled": { en: "Upload Excel first", th: "อัปโหลด Excel ก่อน" },
   "cb.dst.uploading": { en: "Uploading...", th: "กำลังอัปโหลด..." },
   "cb.dst.matched": { en: "programs matched", th: "โปรแกรมตรงกัน" },
+  "cb.dst.uploaded": { en: "DST files uploaded", th: "ไฟล์ DST อัปโหลดแล้ว" },
   "cb.dst.missing": { en: "missing", th: "ไม่พบ" },
 
   // Column Mapping
@@ -67,13 +68,13 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.mapping.select": { en: "— select —", th: "— เลือก —" },
   "cb.mapping.field.program": { en: "Program", th: "โปรแกรม" },
   "cb.mapping.field.name_line1": { en: "Name", th: "ชื่อ" },
-  "cb.mapping.field.name_line2": { en: "Title", th: "ตำแหน่ง" },
+  "cb.mapping.field.name_line2": { en: "2nd Line", th: "บรรทัดที่ 2" },
   "cb.mapping.field.quantity": { en: "Quantity", th: "จำนวน" },
   "cb.mapping.field.com_no": { en: "Combo No", th: "เลขคอมโบ" },
   "cb.mapping.field.machine_program": { en: "Machine", th: "เครื่อง" },
   "cb.mapping.help.program": { en: "DST file number (e.g., 42 = 42.DST)", th: "เลขไฟล์ DST (เช่น 42 = 42.DST)" },
   "cb.mapping.help.name_line1": { en: "Name to be embroidered", th: "ชื่อที่จะปัก" },
-  "cb.mapping.help.name_line2": { en: "Second line — organization, title (optional)", th: "บรรทัดที่ 2 — องค์กร, ตำแหน่ง (ไม่บังคับ)" },
+  "cb.mapping.help.name_line2": { en: "Second line — last name, title, organization (optional)", th: "บรรทัดที่ 2 — นามสกุล, ตำแหน่ง, องค์กร (ไม่บังคับ)" },
   "cb.mapping.help.quantity": { en: "How many copies of this name", th: "จำนวนสำเนาของชื่อนี้" },
   "cb.mapping.help.com_no": { en: "Names with same number go in the same output file", th: "ชื่อที่มีเลขเดียวกันจะรวมอยู่ในไฟล์เดียวกัน" },
   "cb.mapping.help.machine_program": { en: "Machine program code (e.g., MA50310)", th: "รหัสโปรแกรมเครื่อง (เช่น MA50310)" },
@@ -120,6 +121,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.export.need_dst": { en: "Upload DST files to enable export", th: "อัปโหลดไฟล์ DST เพื่อเปิดใช้งานการส่งออก" },
   "cb.exported": { en: "Exported", th: "ส่งออกแล้ว" },
   "cb.export.success": { en: "Exported {n} output files", th: "ส่งออก {n} ไฟล์สำเร็จ" },
+  "cb.export.completed_in": { en: "Completed in", th: "เสร็จใน" },
 
   // Error messages
   "err.excel_format": { en: "Please upload an Excel file (.xlsx or .xls)", th: "กรุณาอัปโหลดไฟล์ Excel (.xlsx หรือ .xls)" },
@@ -153,7 +155,7 @@ const translations: Record<string, Record<Lang, string>> = {
   // Excel preview table headers
   "cb.table.program": { en: "Program", th: "โปรแกรม" },
   "cb.table.name": { en: "Name", th: "ชื่อ" },
-  "cb.table.title": { en: "Title", th: "ตำแหน่ง" },
+  "cb.table.title": { en: "2nd Line", th: "บรรทัดที่ 2" },
   "cb.table.qty": { en: "Qty", th: "จำนวน" },
   "cb.table.combo": { en: "Combo", th: "คอมโบ" },
   "cb.table.machine": { en: "Machine", th: "เครื่อง" },

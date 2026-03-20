@@ -103,6 +103,7 @@ export default function ComboBuilder() {
   const [exportProgress, setExportProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState("");
   const [exported, setExported] = useState(false);
+  const [exportElapsed, setExportElapsed] = useState(0);
   const [excelDragOver, setExcelDragOver] = useState(false);
   const [dstDragOver, setDstDragOver] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "success" } | null>(null);
@@ -364,6 +365,7 @@ export default function ComboBuilder() {
       // Export can take 2-3 min on free tier — use 5 min timeout
       const res = await authFetch(`${API}/api/export`, { method: "POST", body: form }, 300_000);
       clearInterval(elapsedTimer);
+      setExportElapsed(Math.round((Date.now() - startTime) / 1000));
       if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
       setExportProgress(-1); // Signal: downloading
       const blob = await res.blob();
@@ -688,7 +690,7 @@ export default function ComboBuilder() {
           <div className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!sessionId ? "opacity-25 pointer-events-none" : ""}`} onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }} onDragLeave={() => setDstDragOver(false)} onDrop={handleDstDrop} onClick={() => sessionId && zipInputRef.current?.click()}>
             <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
             {dstLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
-            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.uploaded_count}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</p></div>
+            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.needed_count > 0 ? <>{(dstData.needed_count - dstData.missing_programs.length)}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</> : <>{dstData.uploaded_count} {t("cb.dst.uploaded")}</>}</p></div>
             : <div><svg className="mx-auto mb-2.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p></div>}
           </div>
         </div>
@@ -967,14 +969,17 @@ export default function ComboBuilder() {
                   <div className="flex items-center justify-between mt-1">
                     <p className="text-[10px]" style={{ color: "var(--muted)" }}>{t("cb.export.progress")}</p>
                     <p className="text-[10px]" style={{ color: "var(--muted)" }}>
-                      {t("cb.export.estimate")} ~{Math.max(1, Math.ceil(selectedCombos.size * 6 / 60))} min
+                      {(() => { const avg = parseData ? parseData.total_slots / Math.max(1, parseData.combo_count) : 10; const spc = avg <= 10 ? 5 : 8; return `${t("cb.export.estimate")} ~${Math.max(1, Math.ceil(selectedCombos.size * spc / 60))} min`; })()}
                     </p>
                   </div>
                 </div>
               )}
               {downloadUrl && !exporting && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-[11px]" style={{ color: "var(--success)" }}>✓ {t("cb.export.done")} combos_{sessionName.replace(/\s+/g, "_")}.zip</p>
+                  {exportElapsed > 0 && (
+                    <span className="text-[10px]" style={{ color: "var(--muted)" }}>— {t("cb.export.completed_in")} {exportElapsed >= 60 ? `${Math.floor(exportElapsed / 60)}m ${exportElapsed % 60}s` : `${exportElapsed}s`}</span>
+                  )}
                   <a href={downloadUrl} download={`combos_${sessionName.replace(/\s+/g, "_")}.zip`} className="text-[11px] underline" style={{ color: "var(--accent)" }}>{t("cb.export.again")}</a>
                 </div>
               )}
