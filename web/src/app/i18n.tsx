@@ -81,6 +81,15 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.mapping.help.quantity": { en: "How many copies of this name", th: "จำนวนสำเนาของชื่อนี้" },
   "cb.mapping.help.com_no": { en: "Names with same number go in the same output file", th: "ชื่อที่มีเลขเดียวกันจะรวมอยู่ในไฟล์เดียวกัน" },
   "cb.mapping.help.machine_program": { en: "MA code (e.g., MA50310)", th: "รหัส MA (เช่น MA50310)" },
+  "cb.mapping.warn_low_title": { en: "⚠ Column detection failed", th: "⚠ ตรวจจับคอลัมน์ไม่สำเร็จ" },
+  "cb.mapping.warn_low": { en: "Headers weren't recognised — every mapping below is a position-based guess and may be wrong. Verify each field carefully before confirming.", th: "ไม่พบส่วนหัวที่รู้จัก — การจับคู่ทั้งหมดเป็นการเดาจากตำแหน่ง กรุณาตรวจสอบทุกช่องอย่างละเอียดก่อนยืนยัน" },
+  "cb.mapping.warn_medium_title": { en: "⚠ Some columns need review", th: "⚠ บางคอลัมน์ต้องตรวจสอบ" },
+  "cb.mapping.warn_medium": { en: "Not all columns were confidently detected. Check each mapping below and correct any that look wrong.", th: "ไม่สามารถตรวจจับคอลัมน์ทั้งหมดได้อย่างมั่นใจ กรุณาตรวจสอบการจับคู่แต่ละช่อง" },
+  "cb.mapping.how_it_works": { en: "How combining works", th: "วิธีการรวมไฟล์" },
+  "cb.mapping.how_grouping": { en: "Rows with the same Combo No + MA are combined into one output file.", th: "แถวที่มี Combo No และ MA เดียวกันจะรวมอยู่ในไฟล์ผลลัพธ์เดียวกัน" },
+  "cb.mapping.how_quantity": { en: "Quantity sets how many embroidery slots each row gets.", th: "Quantity กำหนดจำนวนช่องปักของแต่ละแถว" },
+  "cb.mapping.how_program": { en: "Program maps to the DST filename (e.g., 42 → 42.DST).", th: "Program คือเลขไฟล์ DST (เช่น 42 → 42.DST)" },
+  "cb.mapping.how_names": { en: "Name Line 1 & 2 are the text embroidered in each slot.", th: "ชื่อบรรทัด 1 และ 2 คือข้อความที่ปักในแต่ละช่อง" },
 
   // Stats
   "cb.stats.names": { en: "NAMES", th: "ชื่อ" },

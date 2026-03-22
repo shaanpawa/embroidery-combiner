@@ -454,14 +454,14 @@ export default function ComboBuilder() {
           <button onClick={toggleLang} className="nav-btn">{lang === "en" ? "TH" : "EN"}</button>
           <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
           <div className="hidden sm:flex items-center gap-1.5">
-            <Image src="/ossia-mark.svg?v2" alt="" width={20} height={20} className="micro-logo" />
-            <span className="text-sm font-bold" style={{ color: "var(--foreground)", letterSpacing: "-0.04em" }}>ossia</span>
+            <Image src="/ossia-mark.svg?v3" alt="" width={24} height={17} className="micro-logo" />
+            <span className="text-sm font-normal" style={{ color: "var(--foreground)", letterSpacing: "-0.035em" }}>ossia</span>
           </div>
         </nav>
 
         <div className="flex-1 flex flex-col items-center px-4 sm:px-6 py-6 sm:py-10 overflow-y-auto">
           <div className="max-w-lg w-full" style={{ animation: "slideUp 0.5s ease" }}>
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-2" style={{ letterSpacing: "-0.03em" }}>{t("cb.title")}</h1>
+            <h1 className="text-2xl sm:text-3xl font-medium tracking-tight mb-2" style={{ letterSpacing: "-0.03em" }}>{t("cb.title")}</h1>
             <p className="text-sm mb-8" style={{ color: "var(--muted)" }}>
               {t("cb.session.subtitle")}
             </p>
@@ -494,7 +494,7 @@ export default function ComboBuilder() {
             {/* Existing Sessions */}
             {savedSessions.length > 0 && (
               <div>
-                <h2 className="text-xs font-semibold mb-3" style={{ color: "var(--muted)" }}>
+                <h2 className="text-xs font-medium mb-3" style={{ color: "var(--muted)" }}>
                   {t("cb.session.previous")}
                 </h2>
                 <div className="flex flex-col gap-2">
@@ -637,22 +637,22 @@ export default function ComboBuilder() {
             className="nav-btn"
             title={session.user.email || ""}
           >
-            <span className="hidden sm:inline">{session.user.name || "O"}</span>
-            <span className="sm:hidden">{(session.user.name || "O").charAt(0).toUpperCase()}</span>
-            <span style={{ fontSize: "9px" }}>{t("nav.signout")}</span>
+            <span className="hidden sm:inline text-[10px]">{session.user.name || "O"}</span>
+            <span className="sm:hidden text-[10px]">{(session.user.name || "O").charAt(0).toUpperCase()}</span>
+            <span className="text-[9px]" style={{ opacity: 0.6 }}>{t("nav.signout")}</span>
           </button>
         )}
         <button onClick={toggleLang} className="nav-btn">{lang === "en" ? "TH" : "EN"}</button>
         <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
         <div className="hidden sm:flex items-center gap-1.5">
-          <Image src="/ossia-mark.svg?v2" alt="" width={20} height={20} className="micro-logo" />
-          <span className="text-sm font-bold" style={{ color: "var(--foreground)", letterSpacing: "-0.04em" }}>ossia</span>
+          <Image src="/ossia-mark.svg?v3" alt="" width={24} height={17} className="micro-logo" />
+          <span className="text-sm font-normal" style={{ color: "var(--foreground)", letterSpacing: "-0.035em" }}>ossia</span>
         </div>
       </nav>
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-5 flex flex-col gap-3 sm:gap-4 min-h-0">
         <div style={{ animation: "slideUp 0.4s ease" }}>
-          <h1 className="text-2xl font-semibold tracking-tight" style={{ letterSpacing: "-0.02em" }}>{t("cb.title")}</h1>
+          <h1 className="text-2xl font-medium tracking-tight" style={{ letterSpacing: "-0.02em" }}>{t("cb.title")}</h1>
           <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>{t("cb.subtitle")}</p>
         </div>
 
@@ -677,14 +677,14 @@ export default function ComboBuilder() {
                 </div>
               </div>
             )
-            : <div><span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step1")}</span><svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.excel.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.excel.hint")}</p></div>}
+            : <div><span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step1")}</span><svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.excel.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.excel.hint")}</p></div>}
           </div>
 
           <div className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!sessionId ? "opacity-25 pointer-events-none" : ""}`} onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }} onDragLeave={() => setDstDragOver(false)} onDrop={handleDstDrop} onClick={() => sessionId && zipInputRef.current?.click()}>
             <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
             {dstLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
             : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.needed_count > 0 ? <>{(dstData.needed_count - dstData.missing_programs.length)}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</> : <>{dstData.uploaded_count} {t("cb.dst.uploaded")}</>}</p></div>
-            : <div><span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step2")}</span><svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p></div>}
+            : <div><span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step2")}</span><svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p></div>}
           </div>
         </div>
 
@@ -693,7 +693,7 @@ export default function ComboBuilder() {
           <div className="glass-panel p-4 sm:p-5" style={{ animation: "fadeSlideIn 0.3s ease" }}>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-xs font-semibold">{t("cb.mapping.title")}</h3>
+                <h3 className="text-xs font-medium">{t("cb.mapping.title")}</h3>
                 <p className="text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
                   {detectData.confidence === "high" ? t("cb.mapping.auto") : t("cb.mapping.review")}
                 </p>
@@ -702,6 +702,32 @@ export default function ComboBuilder() {
                 <span className="text-[9px] font-medium px-2 py-1 rounded-md" style={{ background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)" }}>{t("cb.mapping.needs_review")}</span>
               )}
             </div>
+
+            {/* Confidence warning banners */}
+            {detectData.confidence === "low" && (
+              <div className="mb-3 p-3 rounded-lg text-[10px]" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "var(--danger)" }}>
+                <p className="font-semibold mb-0.5">{t("cb.mapping.warn_low_title")}</p>
+                <p style={{ opacity: 0.9 }}>{t("cb.mapping.warn_low")}</p>
+              </div>
+            )}
+            {detectData.confidence === "medium" && (
+              <div className="mb-3 p-3 rounded-lg text-[10px]" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "var(--warning)" }}>
+                <p className="font-semibold mb-0.5">{t("cb.mapping.warn_medium_title")}</p>
+                <p style={{ opacity: 0.9 }}>{t("cb.mapping.warn_medium")}</p>
+              </div>
+            )}
+
+            {/* How combining works */}
+            <div className="mb-3 p-3 rounded-lg text-[10px]" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+              <p className="font-medium mb-1.5" style={{ color: "var(--foreground)" }}>{t("cb.mapping.how_it_works")}</p>
+              <ul className="space-y-1" style={{ color: "var(--muted)" }}>
+                <li>· {t("cb.mapping.how_grouping")}</li>
+                <li>· {t("cb.mapping.how_quantity")}</li>
+                <li>· {t("cb.mapping.how_program")}</li>
+                <li>· {t("cb.mapping.how_names")}</li>
+              </ul>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {FIELD_KEYS.map((field) => {
                 const colIdx = columnMapping[field] ?? -1;
@@ -709,7 +735,7 @@ export default function ComboBuilder() {
                 return (
                   <div key={field} className="p-2.5 rounded-lg" style={{ background: "var(--surface)" }}>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-semibold" style={{ color: "var(--accent)" }}>{t(`cb.mapping.field.${field}`)}</span>
+                      <span className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>{t(`cb.mapping.field.${field}`)}</span>
                     </div>
                     <select
                       className="w-full text-[10px] px-2 py-1.5 rounded-lg bg-transparent mb-1"
@@ -755,7 +781,7 @@ export default function ComboBuilder() {
                   <thead className="sticky top-0" style={{ background: "var(--glass-strong)" }}>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
                       {(["cb.table.program", "cb.table.name", "cb.table.title", "cb.table.qty", "cb.table.combo", "cb.table.machine", "cb.table.group"] as const).map((k) => (
-                        <th key={k} className="text-left py-1.5 px-2 font-semibold" style={{ color: "var(--muted)" }}>{t(k)}</th>
+                        <th key={k} className="text-left py-1.5 px-2 font-medium" style={{ color: "var(--muted)" }}>{t(k)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -823,7 +849,7 @@ export default function ComboBuilder() {
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3 min-h-0" style={{ animation: "slideUp 0.4s ease 0.15s forwards", opacity: 0 }}>
             <div className="glass-panel overflow-hidden flex flex-col min-h-[200px] sm:min-h-[300px]">
               <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
-                <span className="text-xs font-semibold">{t("cb.files.title")} <span className="font-normal" style={{ color: "var(--muted)" }}>{selectedCombos.size}/{totalCombos}</span></span>
+                <span className="text-xs font-medium">{t("cb.files.title")} <span className="font-normal" style={{ color: "var(--muted)" }}>{selectedCombos.size}/{totalCombos}</span></span>
                 <div className="flex gap-1"><button onClick={selectAll} className="glass-btn text-[10px]">{t("cb.files.all")}</button><button onClick={deselectAll} className="glass-btn text-[10px]">{t("cb.files.none")}</button></div>
               </div>
               <div className="flex-1 overflow-y-auto custom-scroll">
@@ -862,10 +888,10 @@ export default function ComboBuilder() {
             <div className="hidden lg:block glass-panel p-4 overflow-y-auto custom-scroll lg:sticky lg:top-0 lg:self-start min-h-[300px]" style={{ maxHeight: "calc(100vh - 340px)" }}>
               {previewCombo ? (
                 <>
-                  <h3 className="text-[11px] font-semibold font-mono mb-3 pb-2" style={{ borderBottom: "1px solid var(--border)", color: "var(--accent)" }}>{previewCombo.filename}</h3>
+                  <h3 className="text-[11px] font-medium font-mono mb-3 pb-2" style={{ borderBottom: "1px solid var(--border)", color: "var(--accent)" }}>{previewCombo.filename}</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.left")}</p>
+                      <p className="text-[9px] font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.left")}</p>
                       {previewCombo.slots.slice(0, 10).map((s, i) => (
                         <div key={i} className="flex items-center gap-1 py-[2px]" style={{ borderBottom: "1px solid var(--border)" }}>
                           <span className="text-[9px] w-3.5 text-right tabular-nums" style={{ color: "var(--border-strong)" }}>{i + 1}</span>
@@ -881,7 +907,7 @@ export default function ComboBuilder() {
                       ))}
                     </div>
                     <div>
-                      <p className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.right")}</p>
+                      <p className="text-[9px] font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.right")}</p>
                       {previewCombo.slots.slice(10).map((s, i) => (
                         <div key={i} className="flex items-center gap-1 py-[2px]" style={{ borderBottom: "1px solid var(--border)" }}>
                           <span className="text-[9px] w-3.5 text-right tabular-nums" style={{ color: "var(--border-strong)" }}>{i + 11}</span>
@@ -906,12 +932,12 @@ export default function ComboBuilder() {
             <div className="absolute inset-0 bg-black/30" onClick={() => setShowMobilePreview(false)} />
             <div className="relative glass-panel rounded-t-2xl p-4 overflow-y-auto" style={{ maxHeight: "65vh", animation: "slideUp 0.2s ease" }}>
               <div className="flex items-center justify-between mb-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
-                <h3 className="text-[11px] font-semibold font-mono" style={{ color: "var(--accent)" }}>{previewCombo.filename}</h3>
+                <h3 className="text-[11px] font-medium font-mono" style={{ color: "var(--accent)" }}>{previewCombo.filename}</h3>
                 <button onClick={() => setShowMobilePreview(false)} className="w-7 h-7 flex items-center justify-center rounded-lg" style={{ color: "var(--muted)", background: "var(--surface)" }}>✕</button>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.left")}</p>
+                  <p className="text-[9px] font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.left")}</p>
                   {previewCombo.slots.slice(0, 10).map((s, i) => (
                     <div key={i} className="flex items-center gap-1 py-[2px]" style={{ borderBottom: "1px solid var(--border)" }}>
                       <span className="text-[9px] w-3.5 text-right tabular-nums" style={{ color: "var(--border-strong)" }}>{i + 1}</span>
@@ -921,7 +947,7 @@ export default function ComboBuilder() {
                   ))}
                 </div>
                 <div>
-                  <p className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.right")}</p>
+                  <p className="text-[9px] font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>{t("cb.preview.right")}</p>
                   {previewCombo.slots.slice(10).map((s, i) => (
                     <div key={i} className="flex items-center gap-1 py-[2px]" style={{ borderBottom: "1px solid var(--border)" }}>
                       <span className="text-[9px] w-3.5 text-right tabular-nums" style={{ color: "var(--border-strong)" }}>{i + 11}</span>
@@ -988,7 +1014,7 @@ export default function ComboBuilder() {
               {!exporting && !downloadUrl && !exported && !dstUploaded && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.export.need_dst")}</p>}
             </div>
             <div className="flex flex-col items-stretch sm:items-end gap-1">
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-center sm:text-right" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step3")}</span>
+              <span className="text-[9px] font-medium uppercase tracking-wider text-center sm:text-right" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step3")}</span>
               <button className="accent-btn w-full sm:w-auto" disabled={selectedCombos.size === 0 || !dstUploaded || exporting} onClick={handleExport}>
                 {exporting ? t("cb.export.exporting") : `${t("cb.export.btn")} ${selectedCombos.size} ${selectedCombos.size !== 1 ? t("cb.export.files") : t("cb.export.file")}`}
               </button>
