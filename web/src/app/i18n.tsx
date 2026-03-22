@@ -25,8 +25,8 @@ const translations: Record<string, Record<Lang, string>> = {
 
   // Homepage
   "home.subtitle": { en: "AUTOMATION TOOLS", th: "เครื่องมืออัตโนมัติ" },
-  "home.combo.title": { en: "Combo Builder", th: "Combo Builder" },
-  "home.combo.desc": { en: "Combine embroidery name programs into production-ready combo files.", th: "รวมโปรแกรมชื่อปักเป็นไฟล์คอมโบสำหรับการผลิต" },
+  "home.combo.title": { en: "Embroidery Stacker", th: "Embroidery Stacker" },
+  "home.combo.desc": { en: "Stack embroidery name programs into production-ready combo files.", th: "รวมโปรแกรมชื่อปักเป็นไฟล์คอมโบสำหรับการผลิต" },
   "home.combo.available": { en: "AVAILABLE", th: "พร้อมใช้งาน" },
   "home.stitch.title": { en: "Stitch Count Predictor", th: "ตัวทำนายจำนวนฝีเข็ม" },
   "home.stitch.desc": { en: "Predict stitch counts and production time from design files.", th: "ทำนายจำนวนฝีเข็มและเวลาผลิตจากไฟล์ดีไซน์" },
@@ -35,9 +35,9 @@ const translations: Record<string, Record<Lang, string>> = {
   "home.coming_soon": { en: "Coming Soon", th: "เร็วๆ นี้" },
   "home.footer": { en: "PRODUCTION TOOLS FOR MICRO EMBROIDERY CO.", th: "เครื่องมือการผลิตสำหรับ MICRO EMBROIDERY CO." },
 
-  // Combo Builder - Session Picker
-  "cb.title": { en: "Combo Builder", th: "Combo Builder" },
-  "cb.session.subtitle": { en: "Create a new session to start combining embroidery name programs into production files.", th: "สร้างเซสชันใหม่เพื่อเริ่มรวมโปรแกรมชื่อปักเป็นไฟล์การผลิต" },
+  // Stacker - Session Picker
+  "cb.title": { en: "Embroidery Stacker", th: "Embroidery Stacker" },
+  "cb.session.subtitle": { en: "Create a new session to start stacking embroidery name programs into production files.", th: "สร้างเซสชันใหม่เพื่อเริ่มรวมโปรแกรมชื่อปักเป็นไฟล์การผลิต" },
   "cb.session.name": { en: "Session Name", th: "ชื่อเซสชัน" },
   "cb.session.start": { en: "Start Session", th: "เริ่มเซสชัน" },
   "cb.session.demo": { en: "or load demo data to explore", th: "หรือโหลดข้อมูลตัวอย่าง" },
@@ -46,11 +46,14 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.session.back": { en: "← Back to sessions", th: "← กลับไปเซสชัน" },
   "cb.session.new": { en: "+ New Session", th: "+ เซสชันใหม่" },
 
-  // Combo Builder - Workflow
-  "cb.subtitle": { en: "Step 1: Upload Excel order → Step 2: Upload DST zip → Step 3: Export combo files", th: "ขั้นตอน 1: อัปโหลด Excel → ขั้นตอน 2: อัปโหลด DST zip → ขั้นตอน 3: ส่งออกไฟล์คอมโบ" },
+  // Stacker - Workflow
+  "cb.subtitle": { en: "Stack embroidery name programs into production combo files", th: "รวมโปรแกรมชื่อปักเป็นไฟล์คอมโบสำหรับการผลิต" },
   "cb.step1": { en: "Step 1", th: "ขั้นตอน 1" },
   "cb.step2": { en: "Step 2", th: "ขั้นตอน 2" },
   "cb.step3": { en: "Step 3", th: "ขั้นตอน 3" },
+  "cb.step.upload_order": { en: "Upload Order", th: "อัปโหลดคำสั่งซื้อ" },
+  "cb.step.upload_programs": { en: "Upload Programs", th: "อัปโหลดโปรแกรม" },
+  "cb.step.export": { en: "Export", th: "ส่งออก" },
   "cb.excel.title": { en: "Order Excel", th: "ไฟล์ Excel คำสั่งซื้อ" },
   "cb.excel.hint": { en: "Drop .xlsx or click to browse", th: "ลาก .xlsx หรือคลิกเพื่อเลือกไฟล์" },
   "cb.excel.parsing": { en: "Parsing...", th: "กำลังอ่าน..." },
@@ -69,6 +72,12 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.mapping.needs_review": { en: "Needs review", th: "ต้องตรวจสอบ" },
   "cb.mapping.confirm": { en: "Confirm & Parse", th: "ยืนยันและอ่านข้อมูล" },
   "cb.mapping.select": { en: "— select —", th: "— เลือก —" },
+  "cb.mapping.click_field": { en: "Click a field card to select it, then click a column to assign", th: "คลิกการ์ดฟิลด์ แล้วคลิกคอลัมน์เพื่อกำหนด" },
+  "cb.mapping.click_column": { en: "Now click a column to assign", th: "คลิกคอลัมน์เพื่อกำหนด" },
+  "cb.mapping.click_to_assign": { en: "click a column to assign", th: "คลิกคอลัมน์เพื่อกำหนด" },
+  "cb.mapping.spreadsheet_preview": { en: "Spreadsheet Preview", th: "ตัวอย่างสเปรดชีต" },
+  "cb.mapping.all_assigned": { en: "All required fields assigned", th: "กำหนดฟิลด์ที่จำเป็นครบแล้ว" },
+  "cb.mapping.fields_remaining": { en: "required fields unassigned", th: "ฟิลด์ที่จำเป็นยังไม่ได้กำหนด" },
   "cb.mapping.field.program": { en: "Program", th: "โปรแกรม" },
   "cb.mapping.field.name_line1": { en: "Name", th: "ชื่อ" },
   "cb.mapping.field.name_line2": { en: "2nd Line", th: "บรรทัดที่ 2" },

@@ -17,6 +17,7 @@ interface EntryPreview { program: number; name_line1: string; name_line2: string
 interface ParseResponse { session_id: string; entries_count: number; total_slots: number; groups: Group[]; combo_count: number; warnings: string[]; entries_preview?: EntryPreview[]; }
 interface DetectResponse { session_id: string; excel_filename: string; headers: string[]; preview_rows: (string | number | null)[][]; detected_mapping: Record<string, number>; confidence: string; }
 const FIELD_KEYS = ["program", "name_line1", "name_line2", "quantity", "com_no", "machine_program"] as const;
+const REQUIRED_FIELDS = ["program", "name_line1", "quantity", "com_no", "machine_program"] as const;
 interface DstResponse { session_id: string; uploaded_count: number; needed_count: number; missing_programs: number[]; all_matched: boolean; }
 interface SessionSummary { session_id: string; name: string; created_at: string; updated_at: string; has_excel: boolean; entries_count: number; combo_count: number; dst_count: number; exported: boolean; }
 interface FullSession {
@@ -26,6 +27,16 @@ interface FullSession {
   exported: boolean; exported_at: string | null; excel_filename: string | null;
   gap_mm: number; column_gap_mm: number; warnings: string[];
 }
+
+// Per-field color palette
+const FIELD_COLORS: Record<string, { bg: string; text: string; border: string; cell: string; glow: string }> = {
+  program:         { bg: "rgba(59,130,246,0.13)",  text: "#3b82f6", border: "rgba(59,130,246,0.4)",  cell: "rgba(59,130,246,0.06)",  glow: "rgba(59,130,246,0.2)"  },
+  name_line1:      { bg: "rgba(34,197,94,0.13)",   text: "#16a34a", border: "rgba(34,197,94,0.4)",   cell: "rgba(34,197,94,0.06)",   glow: "rgba(34,197,94,0.2)"   },
+  name_line2:      { bg: "rgba(20,184,166,0.13)",  text: "#0d9488", border: "rgba(20,184,166,0.4)",  cell: "rgba(20,184,166,0.06)",  glow: "rgba(20,184,166,0.2)"  },
+  quantity:        { bg: "rgba(168,85,247,0.13)",  text: "#a855f7", border: "rgba(168,85,247,0.4)",  cell: "rgba(168,85,247,0.06)",  glow: "rgba(168,85,247,0.2)"  },
+  com_no:          { bg: "rgba(249,115,22,0.13)",  text: "#f97316", border: "rgba(249,115,22,0.4)",  cell: "rgba(249,115,22,0.06)",  glow: "rgba(249,115,22,0.2)"  },
+  machine_program: { bg: "rgba(239,68,68,0.13)",   text: "#ef4444", border: "rgba(239,68,68,0.4)",   cell: "rgba(239,68,68,0.06)",   glow: "rgba(239,68,68,0.2)"   },
+};
 
 function useCountUp(target: number, duration = 600) {
   const [value, setValue] = useState(0);
@@ -42,10 +53,11 @@ function useCountUp(target: number, duration = 600) {
   return value;
 }
 
-function StatCard({ value, label, description, delay = 0 }: { value: number; label: string; description?: string; delay?: number }) {
+function StatCard({ value, label, description, delay = 0, icon }: { value: number; label: string; description?: string; delay?: number; icon?: React.ReactNode }) {
   const display = useCountUp(value);
   return (
     <div className="stat-card group relative" style={{ animation: `countUp 0.4s ease ${delay}s forwards`, opacity: 0 }}>
+      {icon && <div className="flex justify-center mb-1.5 opacity-35">{icon}</div>}
       <div className="stat-number">{display}</div>
       <div className="stat-label">{label}</div>
       {description && (
@@ -75,7 +87,82 @@ function formatDate(iso: string): string {
   } catch { return iso; }
 }
 
-export default function ComboBuilder() {
+// Visual 3-step stepper
+function StepIndicator({ step1Done, step2Done, step3Done, labels }: { step1Done: boolean; step2Done: boolean; step3Done: boolean; labels: string[] }) {
+  const steps = [
+    { done: step1Done, active: !step1Done },
+    { done: step2Done, active: step1Done && !step2Done },
+    { done: step3Done, active: step2Done && !step3Done },
+  ];
+  return (
+    <div className="flex items-center justify-center py-1" style={{ animation: "fadeIn 0.5s ease 0.1s forwards", opacity: 0 }}>
+      {steps.map((s, i) => (
+        <div key={i} className="flex items-center">
+          {i > 0 && (
+            <div style={{
+              width: "36px", height: "2px", margin: "0 4px",
+              background: steps[i - 1].done ? "var(--accent)" : "var(--border)",
+              borderRadius: "1px",
+              transition: "background 0.4s ease",
+            }} />
+          )}
+          <div className="flex flex-col items-center gap-1">
+            <div
+              className={s.active ? "step-active-glow" : ""}
+              style={{
+                width: "26px", height: "26px", borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "10px", fontWeight: 700,
+                background: s.done ? "var(--accent)" : s.active ? "transparent" : "var(--surface)",
+                border: s.done ? "none" : s.active ? "2px solid var(--accent)" : "2px solid var(--border)",
+                color: s.done ? "white" : s.active ? "var(--accent)" : "var(--muted)",
+                transition: "all 0.35s cubic-bezier(.4,0,.2,1)",
+              }}
+            >
+              {s.done ? (
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="2,6 5,9 10,3" />
+                </svg>
+              ) : i + 1}
+            </div>
+            <span style={{
+              fontSize: "9px", whiteSpace: "nowrap", letterSpacing: "0.03em",
+              color: s.done ? "var(--accent)" : s.active ? "var(--foreground)" : "var(--muted)",
+              fontWeight: s.active ? 500 : 400,
+              transition: "color 0.3s ease",
+            }}>{labels[i]}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Skeleton shimmer bars for Excel parsing
+function ExcelSkeleton({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2.5 w-full px-6 max-w-xs mx-auto">
+      <div className="flex gap-1.5 w-full">
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 40%" }} />
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 30%" }} />
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 20%" }} />
+      </div>
+      <div className="flex gap-1.5 w-full">
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 30%" }} />
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 45%" }} />
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 15%" }} />
+      </div>
+      <div className="flex gap-1.5 w-full">
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 50%" }} />
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 25%" }} />
+        <div className="skeleton" style={{ height: "8px", borderRadius: "4px", flex: "0 0 15%" }} />
+      </div>
+      <p className="text-[10px] mt-0.5" style={{ color: "var(--accent)" }}>{label}</p>
+    </div>
+  );
+}
+
+export default function EmbroideryStacker() {
   const { theme, toggle } = useTheme();
   const { lang, toggle: toggleLang, t } = useLanguage();
   const { data: session } = useSession();
@@ -115,10 +202,25 @@ export default function ComboBuilder() {
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [gapMm, setGapMm] = useState(3);
   const [columnGapMm, setColumnGapMm] = useState(5);
+  // New: interactive column assignment
+  const [activeField, setActiveField] = useState<string | null>(null);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = useCallback((message: string, type: "error" | "warning" | "success" = "error") => setToast({ message, type }), []);
+
+  // Auto-expand "how it works" when confidence is low
+  useEffect(() => {
+    if (detectData) setShowHowItWorks(detectData.confidence === "low");
+  }, [detectData]);
+
+  // Close active field on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setActiveField(null); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -127,10 +229,8 @@ export default function ComboBuilder() {
     } catch { /* ignore */ }
   }, []);
 
-  // Fetch sessions + warm up backend on mount (wakes Render free tier from sleep)
   useEffect(() => { fetchSessions(); warmupBackend(API); }, [fetchSessions]);
 
-  // Save session name to server when it changes
   const saveSessionName = useCallback(async (sid: string, name: string) => {
     const form = new FormData(); form.append("session_id", sid); form.append("name", name);
     try { await authFetch(`${API}/api/session/name`, { method: "POST", body: form }); } catch { /* ignore */ }
@@ -141,7 +241,7 @@ export default function ComboBuilder() {
     setDstUploaded(false); setDstData(null); setDstFileName("");
     setSelectedCombos(new Set()); setExpandedGroups(new Set());
     setPreviewCombo(null); setDownloadUrl(""); setExportProgress(0);
-    setShowExcelPreview(false); setExported(false);
+    setShowExcelPreview(false); setExported(false); setActiveField(null);
   }, []);
 
   const applyParseData = useCallback((data: ParseResponse) => {
@@ -163,19 +263,9 @@ export default function ComboBuilder() {
     setSessionId(data.session_id);
     setSessionName(data.name);
     setExported(data.exported);
-
-    // Apply gap settings
     setGapMm(data.gap_mm);
     setColumnGapMm(data.column_gap_mm);
-
-    // Apply Excel data
-    if (data.excel_filename) {
-      setExcelFile(data.excel_filename);
-    } else {
-      setExcelFile("");
-    }
-
-    // Apply parse data as ParseResponse
+    if (data.excel_filename) { setExcelFile(data.excel_filename); } else { setExcelFile(""); }
     if (data.entries_count > 0) {
       const pd: ParseResponse = {
         session_id: data.session_id,
@@ -196,34 +286,17 @@ export default function ComboBuilder() {
       if (data.groups[0]?.combos[0]) setPreviewCombo(data.groups[0].combos[0]);
       else setPreviewCombo(null);
     } else {
-      setParseData(null);
-      setSelectedCombos(new Set());
-      setExpandedGroups(new Set());
-      setPreviewCombo(null);
+      setParseData(null); setSelectedCombos(new Set()); setExpandedGroups(new Set()); setPreviewCombo(null);
     }
-
-    // Apply DST data
     if (data.dst_count > 0) {
       setDstUploaded(true);
       setDstFileName(`${data.dst_count} DST files`);
-      setDstData({
-        session_id: data.session_id,
-        uploaded_count: data.dst_count,
-        needed_count: data.entries_count,
-        missing_programs: data.missing_programs || [],
-        all_matched: data.dst_all_matched,
-      });
+      setDstData({ session_id: data.session_id, uploaded_count: data.dst_count, needed_count: data.entries_count, missing_programs: data.missing_programs || [], all_matched: data.dst_all_matched });
     } else {
-      setDstUploaded(false);
-      setDstData(null);
-      setDstFileName("");
+      setDstUploaded(false); setDstData(null); setDstFileName("");
     }
-
-    // Reset transient UI state
-    setDownloadUrl("");
-    setExportProgress(0);
-    setShowExcelPreview(false);
-    setShowSettings(false);
+    setDownloadUrl(""); setExportProgress(0); setShowExcelPreview(false); setShowSettings(false);
+    setMappingConfirmed(data.entries_count > 0);
   }, []);
 
   const loadFullSession = useCallback(async (sid: string) => {
@@ -246,17 +319,10 @@ export default function ComboBuilder() {
       if (!res.ok) throw new Error("Delete failed");
       showToast(t("ok.session_deleted"), "success");
       fetchSessions();
-      // If we deleted the active session, go back to picker
       if (sid === sessionId) {
-        resetSession();
-        setExcelFile("");
-        setParseData(null);
-        setSessionStarted(false);
-        setSessionId("");
+        resetSession(); setExcelFile(""); setParseData(null); setSessionStarted(false); setSessionId("");
       }
-    } catch (e) {
-      showToast(`${e instanceof Error ? e.message : t("err.delete_session")}`);
-    }
+    } catch (e) { showToast(`${e instanceof Error ? e.message : t("err.delete_session")}`); }
     setDeleteConfirm(null);
   }, [sessionId, resetSession, showToast, fetchSessions, t]);
 
@@ -265,26 +331,18 @@ export default function ComboBuilder() {
     try {
       const res = await authFetch(`${API}/api/session/${sessionId}/excel`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove Excel");
-      setExcelFile("");
-      setParseData(null);
-      setSelectedCombos(new Set());
-      setExpandedGroups(new Set());
-      setPreviewCombo(null);
-      setDownloadUrl("");
-      setExportProgress(0);
-      setShowExcelPreview(false);
-      setExported(false);
+      setExcelFile(""); setParseData(null); setSelectedCombos(new Set()); setExpandedGroups(new Set());
+      setPreviewCombo(null); setDownloadUrl(""); setExportProgress(0); setShowExcelPreview(false);
+      setExported(false); setDetectData(null); setColumnMapping({}); setMappingConfirmed(false);
       showToast(t("ok.excel_removed"), "success");
       fetchSessions();
-    } catch (e) {
-      showToast(`${e instanceof Error ? e.message : t("err.excel_read")}`);
-    }
+    } catch (e) { showToast(`${e instanceof Error ? e.message : t("err.excel_read")}`); }
   }, [sessionId, showToast, fetchSessions, t]);
 
   const uploadExcel = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.excel_format")); return; }
     resetSession();
-    setSessionId(""); // Force new server session
+    setSessionId("");
     setExcelLoading(true); setExcelFile(file.name);
     const form = new FormData(); form.append("file", file);
     try {
@@ -355,22 +413,19 @@ export default function ComboBuilder() {
     form.append("selected_filenames", Array.from(selectedCombos).join(","));
     form.append("gap_mm", String(gapMm));
     form.append("column_gap_mm", String(columnGapMm));
-    // Track elapsed time for user feedback
     const startTime = Date.now();
     const elapsedTimer = setInterval(() => {
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      setExportProgress(elapsed); // Use as seconds counter, not percentage
+      setExportProgress(Math.round((Date.now() - startTime) / 1000));
     }, 1000);
     try {
-      // Export can take 2-3 min on free tier — use 5 min timeout
       const res = await authFetch(`${API}/api/export`, { method: "POST", body: form }, 300_000);
       clearInterval(elapsedTimer);
       setExportElapsed(Math.round((Date.now() - startTime) / 1000));
       if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
-      setExportProgress(-1); // Signal: downloading
+      setExportProgress(-1);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      setDownloadUrl(url); setExportProgress(-2); // Signal: complete
+      setDownloadUrl(url); setExportProgress(-2);
       setExported(true);
       const a = document.createElement("a");
       a.href = url; a.download = `combos_${sessionName.replace(/\s+/g, "_")}.zip`; a.click();
@@ -387,6 +442,7 @@ export default function ComboBuilder() {
       if (!res.ok) throw new Error("API not running on port 8000");
       const data = await res.json();
       setExcelFile("nameorder_04032026-2 add column.xlsx");
+      setMappingConfirmed(true);
       applyParseData(data);
       if (data.dst_count > 0) { setDstUploaded(true); setDstFileName(`${data.dst_count} DST files`); setDstData({ session_id: data.session_id, uploaded_count: data.dst_count, needed_count: data.entries_count, missing_programs: [], all_matched: true }); }
     } catch (e) { showToast(`${e instanceof Error ? e.message : t("err.load_sample")}`); }
@@ -424,22 +480,42 @@ export default function ComboBuilder() {
     if (files.length) uploadDst(files);
   }, [uploadDst]);
 
+  // Interactive column assignment
+  const handleColumnClick = useCallback((colIdx: number) => {
+    if (activeField) {
+      // Deduplicate: remove this colIdx from any other field
+      const cleanedMapping = { ...columnMapping };
+      Object.entries(cleanedMapping).forEach(([field, idx]) => {
+        if (idx === colIdx && field !== activeField) cleanedMapping[field] = -1;
+      });
+      // Toggle: clicking same col that activeField already has → unassign
+      if (cleanedMapping[activeField] === colIdx) {
+        cleanedMapping[activeField] = -1;
+      } else {
+        cleanedMapping[activeField] = colIdx;
+      }
+      setColumnMapping(cleanedMapping);
+      setActiveField(null);
+    } else {
+      // Select the field that owns this column
+      const ownerField = Object.entries(columnMapping).find(([, idx]) => idx === colIdx)?.[0];
+      if (ownerField) setActiveField(ownerField);
+    }
+  }, [activeField, columnMapping]);
+
   const toggleCombo = (f: string) => setSelectedCombos((p) => { const n = new Set(p); n.has(f) ? n.delete(f) : n.add(f); return n; });
   const selectAll = () => { if (!parseData) return; const a = new Set<string>(); parseData.groups.forEach((g) => g.combos.forEach((c) => a.add(c.filename))); setSelectedCombos(a); };
   const deselectAll = () => setSelectedCombos(new Set());
   const toggleGroup = (k: string) => setExpandedGroups((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const totalCombos = parseData?.groups.reduce((s, g) => s + g.combos.length, 0) ?? 0;
 
-  const startSession = () => {
-    if (!sessionName.trim()) return;
-    setSessionStarted(true);
-  };
+  // Build reverse mapping: colIdx → fieldKey
+  const colToField = Object.entries(columnMapping)
+    .filter(([, v]) => v >= 0)
+    .reduce((acc, [field, col]) => { acc[col] = field; return acc; }, {} as Record<number, string>);
 
-  const startDemoSession = () => {
-    setSessionName("Demo Session");
-    setSessionStarted(true);
-    setTimeout(() => loadSampleData(), 100);
-  };
+  const startSession = () => { if (!sessionName.trim()) return; setSessionStarted(true); };
+  const startDemoSession = () => { setSessionName("Demo Session"); setSessionStarted(true); setTimeout(() => loadSampleData(), 100); };
 
   /* ── Session Picker Screen ── */
   if (!sessionStarted) {
@@ -462,9 +538,7 @@ export default function ComboBuilder() {
         <div className="flex-1 flex flex-col items-center px-4 sm:px-6 py-6 sm:py-10 overflow-y-auto">
           <div className="max-w-lg w-full" style={{ animation: "slideUp 0.5s ease" }}>
             <h1 className="text-2xl sm:text-3xl font-medium tracking-tight mb-2" style={{ letterSpacing: "-0.03em" }}>{t("cb.title")}</h1>
-            <p className="text-sm mb-8" style={{ color: "var(--muted)" }}>
-              {t("cb.session.subtitle")}
-            </p>
+            <p className="text-sm mb-8" style={{ color: "var(--muted)" }}>{t("cb.session.subtitle")}</p>
 
             {/* New Session */}
             <div className="glass-panel p-6 mb-4">
@@ -479,83 +553,75 @@ export default function ComboBuilder() {
                 style={{ border: "1px solid var(--border)", color: "var(--foreground)" }}
                 autoFocus
               />
-              <button
-                className="accent-btn w-full"
-                onClick={startSession}
-                disabled={!sessionName.trim()}
-              >
+              <button className="accent-btn w-full" onClick={startSession} disabled={!sessionName.trim()}>
                 {t("cb.session.start")}
               </button>
+              <button
+                className="w-full mt-2 text-[11px] py-2"
+                style={{ color: "var(--muted)" }}
+                onClick={startDemoSession}
+              >
+                {t("cb.session.demo")}
+              </button>
             </div>
-
-            {/* Spacer before previous sessions */}
-            <div className="mb-4" />
 
             {/* Existing Sessions */}
             {savedSessions.length > 0 && (
               <div>
-                <h2 className="text-xs font-medium mb-3" style={{ color: "var(--muted)" }}>
-                  {t("cb.session.previous")}
-                </h2>
+                <h2 className="text-xs font-medium mb-3" style={{ color: "var(--muted)" }}>{t("cb.session.previous")}</h2>
                 <div className="flex flex-col gap-2">
-                  {savedSessions.map((s) => (
-                    <div
-                      key={s.session_id}
-                      className="glass-panel px-4 py-3 flex items-center gap-3 cursor-pointer transition-all hover:scale-[1.01]"
-                      style={{ animation: "fadeSlideIn 0.3s ease" }}
-                      onClick={() => loadFullSession(s.session_id)}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{s.name}</span>
-                          {s.exported && (
-                            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "var(--success)", color: "white" }}>
-                              {t("cb.exported")}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-[10px]" style={{ color: "var(--muted)" }}>{formatDate(s.created_at)}</span>
-                          {s.entries_count > 0 && (
-                            <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                              {s.entries_count} {t("names")}
-                            </span>
-                          )}
-                          {s.combo_count > 0 && (
-                            <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                              {s.combo_count} {t("combos")}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {/* Delete button */}
-                      <button
-                        className="text-xs w-6 h-6 flex items-center justify-center rounded-lg transition-colors shrink-0"
-                        style={{ color: "var(--muted)", background: deleteConfirm === s.session_id ? "var(--danger)" : "transparent" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (deleteConfirm === s.session_id) {
-                            deleteSession(s.session_id);
-                          } else {
-                            setDeleteConfirm(s.session_id);
-                            setTimeout(() => setDeleteConfirm(null), 3000);
-                          }
-                        }}
-                        title={deleteConfirm === s.session_id ? t("cb.session.delete_confirm") : t("cb.session.delete")}
+                  {savedSessions.map((s) => {
+                    const dotColor = s.exported ? "var(--success)" : s.has_excel ? "var(--accent)" : "var(--border-strong)";
+                    return (
+                      <div
+                        key={s.session_id}
+                        className="glass-panel px-4 py-3 flex items-center gap-3 cursor-pointer transition-all hover:scale-[1.01]"
+                        style={{ animation: "fadeSlideIn 0.3s ease" }}
+                        onClick={() => loadFullSession(s.session_id)}
                       >
-                        <span style={{ color: deleteConfirm === s.session_id ? "white" : "var(--muted)" }}>
-                          {deleteConfirm === s.session_id ? "?" : "✕"}
-                        </span>
-                      </button>
-                    </div>
-                  ))}
+                        {/* Status dot */}
+                        <div className="w-2 h-2 rounded-full shrink-0 transition-colors" style={{ background: dotColor, boxShadow: s.exported ? `0 0 5px ${dotColor}` : "none" }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{s.name}</span>
+                            {s.exported && (
+                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "var(--success)", color: "white" }}>{t("cb.exported")}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-[10px]" style={{ color: "var(--muted)" }}>{formatDate(s.created_at)}</span>
+                            {s.entries_count > 0 && <span className="text-[10px]" style={{ color: "var(--muted)" }}>{s.entries_count} {t("names")}</span>}
+                            {s.combo_count > 0 && <span className="text-[10px]" style={{ color: "var(--muted)" }}>{s.combo_count} {t("combos")}</span>}
+                          </div>
+                        </div>
+                        {/* Delete button */}
+                        <button
+                          className="text-xs w-6 h-6 flex items-center justify-center rounded-lg transition-colors shrink-0"
+                          style={{ color: "var(--muted)", background: deleteConfirm === s.session_id ? "var(--danger)" : "transparent" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (deleteConfirm === s.session_id) { deleteSession(s.session_id); }
+                            else { setDeleteConfirm(s.session_id); setTimeout(() => setDeleteConfirm(null), 3000); }
+                          }}
+                          title={deleteConfirm === s.session_id ? t("cb.session.delete_confirm") : t("cb.session.delete")}
+                        >
+                          <span style={{ color: deleteConfirm === s.session_id ? "white" : "var(--muted)" }}>
+                            {deleteConfirm === s.session_id ? "?" : "✕"}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {loadingSession && (
               <div className="flex items-center justify-center py-8">
-                <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.session.loading")}</p>
+                <div className="flex items-center gap-2.5">
+                  <div className="spinner" />
+                  <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.session.loading")}</p>
+                </div>
               </div>
             )}
           </div>
@@ -565,6 +631,10 @@ export default function ComboBuilder() {
   }
 
   /* ── Main Workflow ── */
+  const step1Done = !!excelFile && mappingConfirmed;
+  const step2Done = dstUploaded;
+  const step3Done = exported;
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -584,45 +654,38 @@ export default function ComboBuilder() {
           </button>
           {showSessionDropdown && (
             <>
-              {/* Backdrop to close dropdown */}
               <div className="fixed inset-0 z-40" onClick={() => setShowSessionDropdown(false)} />
-              <div className="absolute top-full left-0 mt-1.5 py-1.5 min-w-[260px] max-w-[calc(100vw-2rem)] z-50 rounded-xl overflow-hidden" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", border: "1px solid var(--glass-border)", boxShadow: "var(--shadow-float)", animation: "fadeSlideIn 0.15s ease" }}>
-                {savedSessions.length > 0 && savedSessions.map((s) => (
-                  <button
-                    key={s.session_id}
-                    className="w-full text-left px-3.5 py-2 text-[11px] transition-colors flex items-center justify-between hover:bg-[var(--surface-hover)]"
-                    style={{ background: s.session_id === sessionId ? "var(--accent-glow)" : "transparent", color: s.session_id === sessionId ? "var(--accent)" : "var(--foreground)" }}
-                    onClick={async () => {
-                      setShowSessionDropdown(false);
-                      if (s.session_id === sessionId) return;
-                      await loadFullSession(s.session_id);
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium">{s.name}</span>
-                      {s.exported && <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "var(--success)", color: "white" }}>{t("cb.exported")}</span>}
-                    </div>
-                    <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                      {s.entries_count > 0 ? `${s.entries_count} ${t("names")}` : t("empty")}
-                    </span>
-                  </button>
-                ))}
+              <div className="absolute top-full left-0 mt-1.5 py-1.5 min-w-[280px] max-w-[calc(100vw-2rem)] z-50 rounded-xl overflow-hidden" style={{ background: "var(--glass-strong)", backdropFilter: "blur(24px)", border: "1px solid var(--glass-border)", boxShadow: "var(--shadow-float)", animation: "fadeSlideIn 0.15s ease" }}>
+                {savedSessions.length > 0 && savedSessions.map((s) => {
+                  const dotColor = s.exported ? "var(--success)" : s.has_excel ? "var(--accent)" : "var(--border-strong)";
+                  return (
+                    <button
+                      key={s.session_id}
+                      className="w-full text-left px-3.5 py-2 text-[11px] transition-colors flex items-center gap-2.5 hover:bg-[var(--surface-hover)]"
+                      style={{ background: s.session_id === sessionId ? "var(--accent-glow)" : "transparent", color: s.session_id === sessionId ? "var(--accent)" : "var(--foreground)" }}
+                      onClick={async () => { setShowSessionDropdown(false); if (s.session_id === sessionId) return; await loadFullSession(s.session_id); }}
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+                      <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                        <span className="font-medium truncate">{s.name}</span>
+                        {s.exported && <span className="text-[8px] px-1 py-0.5 rounded shrink-0" style={{ background: "var(--success)", color: "white" }}>{t("cb.exported")}</span>}
+                      </div>
+                      <span className="text-[10px] shrink-0" style={{ color: "var(--muted)" }}>
+                        {s.entries_count > 0 ? `${s.entries_count} ${t("names")}` : t("empty")}
+                      </span>
+                    </button>
+                  );
+                })}
                 {savedSessions.length === 0 && (
                   <p className="text-[10px] px-3.5 py-2" style={{ color: "var(--muted)" }}>{t("cb.session.no_sessions")}</p>
                 )}
                 <div style={{ borderTop: "1px solid var(--border)", marginTop: "4px", paddingTop: "4px" }}>
-                  <button
-                    className="w-full text-left px-3.5 py-2 text-[11px] transition-colors hover:bg-[var(--surface-hover)]"
-                    style={{ color: "var(--muted)" }}
-                    onClick={() => { setShowSessionDropdown(false); resetSession(); setExcelFile(""); setParseData(null); setSessionStarted(false); setSessionId(""); }}
-                  >
+                  <button className="w-full text-left px-3.5 py-2 text-[11px] transition-colors hover:bg-[var(--surface-hover)]" style={{ color: "var(--muted)" }}
+                    onClick={() => { setShowSessionDropdown(false); resetSession(); setExcelFile(""); setParseData(null); setSessionStarted(false); setSessionId(""); }}>
                     {t("cb.session.back")}
                   </button>
-                  <button
-                    className="w-full text-left px-3.5 py-2 text-[11px] font-medium transition-colors hover:bg-[var(--surface-hover)]"
-                    style={{ color: "var(--accent)" }}
-                    onClick={() => { setShowSessionDropdown(false); resetSession(); setExcelFile(""); setParseData(null); setSessionId(""); setSessionName(new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })); }}
-                  >
+                  <button className="w-full text-left px-3.5 py-2 text-[11px] font-medium transition-colors hover:bg-[var(--surface-hover)]" style={{ color: "var(--accent)" }}
+                    onClick={() => { setShowSessionDropdown(false); resetSession(); setExcelFile(""); setParseData(null); setSessionId(""); setSessionName(new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })); }}>
                     {t("cb.session.new")}
                   </button>
                 </div>
@@ -632,11 +695,7 @@ export default function ComboBuilder() {
         </div>
         <div className="flex-1" />
         {session?.user && (
-          <button
-            onClick={() => { clearAuthToken(); signOut({ callbackUrl: "/login" }); }}
-            className="nav-btn"
-            title={session.user.email || ""}
-          >
+          <button onClick={() => { clearAuthToken(); signOut({ callbackUrl: "/login" }); }} className="nav-btn" title={session.user.email || ""}>
             <span className="hidden sm:inline text-[10px]">{session.user.name || "O"}</span>
             <span className="sm:hidden text-[10px]">{(session.user.name || "O").charAt(0).toUpperCase()}</span>
             <span className="text-[9px]" style={{ opacity: 0.6 }}>{t("nav.signout")}</span>
@@ -651,118 +710,318 @@ export default function ComboBuilder() {
       </nav>
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-5 flex flex-col gap-3 sm:gap-4 min-h-0">
+
+        {/* Title + Step Indicator */}
         <div style={{ animation: "slideUp 0.4s ease" }}>
-          <h1 className="text-2xl font-medium tracking-tight" style={{ letterSpacing: "-0.02em" }}>{t("cb.title")}</h1>
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>{t("cb.subtitle")}</p>
+          <h1 className="text-2xl font-medium tracking-tight mb-3" style={{ letterSpacing: "-0.02em" }}>{t("cb.title")}</h1>
+          <StepIndicator
+            step1Done={step1Done}
+            step2Done={step2Done}
+            step3Done={step3Done}
+            labels={[t("cb.step.upload_order"), t("cb.step.upload_programs"), t("cb.step.export")]}
+          />
         </div>
 
         {/* Upload Zones */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ animation: "slideUp 0.4s ease 0.05s forwards", opacity: 0 }}>
-          <div className={`drop-zone ${excelDragOver ? "drag-over" : ""} ${excelFile ? "has-file" : ""}`} onDragOver={(e) => { e.preventDefault(); setExcelDragOver(true); }} onDragLeave={() => setExcelDragOver(false)} onDrop={handleExcelDrop} onClick={() => excelInputRef.current?.click()}>
+          {/* Excel drop zone */}
+          <div
+            className={`drop-zone ${excelDragOver ? "drag-over" : ""} ${excelFile ? "has-file" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setExcelDragOver(true); }}
+            onDragLeave={() => setExcelDragOver(false)}
+            onDrop={handleExcelDrop}
+            onClick={() => excelInputRef.current?.click()}
+          >
             <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadExcel(e.target.files[0]); e.target.value = ""; }} />
-            {excelLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.excel.parsing")}</p>
-            : excelFile ? (
+            {excelLoading && !detectData ? (
+              <ExcelSkeleton label={t("cb.excel.parsing")} />
+            ) : excelFile ? (
               <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
                 <div className="flex items-center justify-center gap-2">
-                  <span style={{ color: "var(--accent)", fontSize: "16px" }}>✓</span>
+                  <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>
                   <span className="text-sm font-medium" style={{ color: "var(--accent)" }}>{excelFile}</span>
                   <button
                     className="w-5 h-5 flex items-center justify-center rounded-md text-[10px] transition-colors"
                     style={{ color: "var(--muted)", background: "var(--surface)" }}
                     onClick={(e) => { e.stopPropagation(); removeExcel(); }}
                     title="Remove Excel"
-                  >
-                    ✕
-                  </button>
+                  >✕</button>
                 </div>
               </div>
-            )
-            : <div><span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step1")}</span><svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.excel.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.excel.hint")}</p></div>}
+            ) : (
+              <div>
+                <span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>01</span>
+                <svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                <p className="text-sm font-medium mb-0.5">{t("cb.excel.title")}</p>
+                <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.excel.hint")}</p>
+              </div>
+            )}
           </div>
 
-          <div className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!sessionId ? "opacity-25 pointer-events-none" : ""}`} onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }} onDragLeave={() => setDstDragOver(false)} onDrop={handleDstDrop} onClick={() => sessionId && zipInputRef.current?.click()}>
+          {/* DST drop zone */}
+          <div
+            className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!mappingConfirmed ? "opacity-25 pointer-events-none" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }}
+            onDragLeave={() => setDstDragOver(false)}
+            onDrop={handleDstDrop}
+            onClick={() => mappingConfirmed && zipInputRef.current?.click()}
+          >
             <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
-            {dstLoading ? <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
-            : dstUploaded && dstData ? <div style={{ animation: "fadeSlideIn 0.3s ease" }}><div className="flex items-center justify-center gap-2"><span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span><span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>{dstData.needed_count > 0 ? <>{(dstData.needed_count - dstData.missing_programs.length)}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</> : <>{dstData.uploaded_count} {t("cb.dst.uploaded")}</>}</p></div>
-            : <div><span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step2")}</span><svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{sessionId ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p></div>}
+            {dstLoading ? (
+              <div className="flex flex-col items-center gap-3" style={{ animation: "fadeIn 0.2s ease" }}>
+                <div className="spinner" />
+                <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
+              </div>
+            ) : dstUploaded && dstData ? (
+              <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
+                <div className="flex items-center justify-center gap-2">
+                  <span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span>
+                  <span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span>
+                </div>
+                <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                  {dstData.needed_count > 0 ? <>{(dstData.needed_count - dstData.missing_programs.length)}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</> : <>{dstData.uploaded_count} {t("cb.dst.uploaded")}</>}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>02</span>
+                <svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                <p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p>
+                <p className="text-[11px]" style={{ color: "var(--muted)" }}>{mappingConfirmed ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Column Mapping Confirmation */}
+        {/* ── Column Mapping (Interactive) ── */}
         {detectData && !mappingConfirmed && (
-          <div className="glass-panel p-4 sm:p-5" style={{ animation: "fadeSlideIn 0.3s ease" }}>
-            <div className="flex items-center justify-between mb-3">
+          <div className="glass-panel overflow-hidden" style={{ animation: "fadeSlideIn 0.35s ease" }}>
+
+            {/* Header */}
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
               <div>
-                <h3 className="text-xs font-medium">{t("cb.mapping.title")}</h3>
-                <p className="text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
-                  {detectData.confidence === "high" ? t("cb.mapping.auto") : t("cb.mapping.review")}
+                <h3 className="text-sm font-medium">{t("cb.mapping.title")}</h3>
+                <p className="text-[11px] mt-0.5" style={{ color: activeField ? "var(--accent)" : "var(--muted)" }}>
+                  {activeField
+                    ? `→ ${t("cb.mapping.click_column")} (${t(`cb.mapping.field.${activeField}`)})`
+                    : detectData.confidence === "high" ? t("cb.mapping.auto") : t("cb.mapping.review")}
                 </p>
               </div>
-              {detectData.confidence !== "high" && (
-                <span className="text-[9px] font-medium px-2 py-1 rounded-md" style={{ background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)" }}>{t("cb.mapping.needs_review")}</span>
-              )}
+              <div className="flex items-center gap-2">
+                {activeField && (
+                  <button onClick={() => setActiveField(null)} className="glass-btn text-[10px]">Esc</button>
+                )}
+                {detectData.confidence !== "high" && (
+                  <span className="text-[9px] font-medium px-2 py-1 rounded-md" style={{ background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)" }}>{t("cb.mapping.needs_review")}</span>
+                )}
+              </div>
             </div>
 
             {/* Confidence warning banners */}
             {detectData.confidence === "low" && (
-              <div className="mb-3 p-3 rounded-lg text-[10px]" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "var(--danger)" }}>
+              <div className="mx-5 mt-4 p-3 rounded-lg text-[10px]" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "var(--danger)" }}>
                 <p className="font-semibold mb-0.5">{t("cb.mapping.warn_low_title")}</p>
                 <p style={{ opacity: 0.9 }}>{t("cb.mapping.warn_low")}</p>
               </div>
             )}
             {detectData.confidence === "medium" && (
-              <div className="mb-3 p-3 rounded-lg text-[10px]" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "var(--warning)" }}>
+              <div className="mx-5 mt-4 p-3 rounded-lg text-[10px]" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "var(--warning)" }}>
                 <p className="font-semibold mb-0.5">{t("cb.mapping.warn_medium_title")}</p>
                 <p style={{ opacity: 0.9 }}>{t("cb.mapping.warn_medium")}</p>
               </div>
             )}
 
-            {/* How combining works */}
-            <div className="mb-3 p-3 rounded-lg text-[10px]" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <p className="font-medium mb-1.5" style={{ color: "var(--foreground)" }}>{t("cb.mapping.how_it_works")}</p>
-              <ul className="space-y-1" style={{ color: "var(--muted)" }}>
-                <li>· {t("cb.mapping.how_grouping")}</li>
-                <li>· {t("cb.mapping.how_quantity")}</li>
-                <li>· {t("cb.mapping.how_program")}</li>
-                <li>· {t("cb.mapping.how_names")}</li>
-              </ul>
+            {/* ── Spreadsheet Preview ── */}
+            <div className="px-5 pt-4 pb-2">
+              <p className="text-[10px] font-medium uppercase tracking-wider mb-2" style={{ color: "var(--muted)", letterSpacing: "0.1em" }}>
+                {t("cb.mapping.spreadsheet_preview")}
+                {activeField && <span style={{ color: "var(--accent)" }}> — {t("cb.mapping.click_to_assign")}</span>}
+              </p>
+              <div className="overflow-x-auto custom-scroll rounded-lg" style={{ border: "1px solid var(--border)" }}>
+                <table className="text-[10px] border-collapse w-full" style={{ fontFamily: "var(--font-geist-mono)", minWidth: `${Math.max(detectData.headers.length * 80, 400)}px` }}>
+                  <thead>
+                    <tr>
+                      {detectData.headers.map((header, colIdx) => {
+                        const assignedField = colToField[colIdx];
+                        const fc = assignedField ? FIELD_COLORS[assignedField] : null;
+                        const isAssignedToActive = activeField && columnMapping[activeField] === colIdx;
+                        return (
+                          <th
+                            key={colIdx}
+                            onClick={() => handleColumnClick(colIdx)}
+                            title={header || undefined}
+                            style={{
+                              padding: "8px 10px",
+                              textAlign: "center",
+                              background: fc ? fc.bg : activeField ? "var(--surface-hover)" : "var(--surface)",
+                              borderRight: "1px solid var(--border)",
+                              borderBottom: `3px solid ${fc ? fc.text : "transparent"}`,
+                              color: fc ? fc.text : "var(--muted)",
+                              cursor: activeField ? "crosshair" : assignedField ? "pointer" : "default",
+                              transition: "all 0.15s ease",
+                              minWidth: "80px",
+                              position: "relative",
+                              outline: isAssignedToActive ? `2px solid ${FIELD_COLORS[activeField!]?.text}` : fc && activeField ? `2px solid ${fc.text}` : "none",
+                              outlineOffset: "-2px",
+                            }}
+                          >
+                            <div className="font-bold text-[11px]">{String.fromCharCode(65 + colIdx)}</div>
+                            {header && <div className="text-[8px] opacity-70 mt-0.5 truncate max-w-[70px]">{header}</div>}
+                            {assignedField && (
+                              <div className="text-[7px] mt-1 font-sans font-medium uppercase tracking-wider" style={{ color: fc?.text }}>
+                                {t(`cb.mapping.field.${assignedField}`)}
+                              </div>
+                            )}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detectData.preview_rows.slice(0, 4).map((row, rowIdx) => (
+                      <tr key={rowIdx}>
+                        {detectData.headers.map((_, colIdx) => {
+                          const assignedField = colToField[colIdx];
+                          const fc = assignedField ? FIELD_COLORS[assignedField] : null;
+                          const val = colIdx < row.length ? row[colIdx] : null;
+                          return (
+                            <td
+                              key={colIdx}
+                              onClick={() => handleColumnClick(colIdx)}
+                              style={{
+                                padding: "5px 10px",
+                                textAlign: "center",
+                                background: fc ? fc.cell : "transparent",
+                                borderRight: "1px solid var(--border)",
+                                borderBottom: "1px solid var(--border)",
+                                color: fc ? fc.text : "var(--foreground)",
+                                cursor: activeField ? "crosshair" : "default",
+                                transition: "background 0.15s ease",
+                                opacity: val === null ? 0.3 : 1,
+                              }}
+                            >
+                              {val !== null ? String(val) : "·"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {/* ── Field Cards ── */}
+            <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {FIELD_KEYS.map((field) => {
                 const colIdx = columnMapping[field] ?? -1;
-                const samples = detectData.preview_rows.slice(0, 3).map(r => colIdx >= 0 && colIdx < r.length ? r[colIdx] : null).filter(v => v !== null).map(v => String(v));
+                const assigned = colIdx >= 0;
+                const isActive = activeField === field;
+                const fc = FIELD_COLORS[field];
+                const colLetter = assigned ? String.fromCharCode(65 + colIdx) : null;
+                const isOptional = field === "name_line2";
+                const samples = assigned
+                  ? detectData.preview_rows.slice(0, 3).map(r => colIdx < r.length ? r[colIdx] : null).filter(v => v !== null && v !== "").map(v => String(v))
+                  : [];
+                const isRequired = !isOptional;
+                const isMissing = isRequired && !assigned;
+
                 return (
-                  <div key={field} className="p-2.5 rounded-lg" style={{ background: "var(--surface)" }}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>{t(`cb.mapping.field.${field}`)}</span>
+                  <div
+                    key={field}
+                    className={isActive ? "field-card-active" : ""}
+                    onClick={() => setActiveField(isActive ? null : field)}
+                    style={{
+                      padding: "12px",
+                      borderRadius: "12px",
+                      cursor: "pointer",
+                      transition: "all 0.18s cubic-bezier(.4,0,.2,1)",
+                      background: isActive ? fc.bg : assigned ? `${fc.bg}` : "var(--surface)",
+                      border: isActive
+                        ? `2px solid ${fc.text}`
+                        : assigned
+                          ? `1.5px solid ${fc.border}`
+                          : isMissing
+                            ? "1.5px dashed rgba(239,68,68,0.35)"
+                            : "1.5px dashed var(--border-strong)",
+                      boxShadow: isActive ? `0 0 0 4px ${fc.glow}, 0 4px 16px ${fc.glow}` : "none",
+                    }}
+                  >
+                    {/* Label row */}
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: assigned || isActive ? fc.text : isMissing ? "rgba(239,68,68,0.5)" : "var(--border-strong)" }} />
+                      <span className="text-[10px] font-semibold" style={{ color: assigned || isActive ? fc.text : isMissing ? "var(--danger)" : "var(--muted)", letterSpacing: "0.02em" }}>
+                        {t(`cb.mapping.field.${field}`)}
+                      </span>
+                      {isOptional && (
+                        <span className="ml-auto text-[7px] px-1.5 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)" }}>opt</span>
+                      )}
                     </div>
-                    <select
-                      className="w-full text-[10px] px-2 py-1.5 rounded-lg bg-transparent mb-1"
-                      style={{ border: "1px solid var(--border)", color: "var(--foreground)" }}
-                      value={colIdx}
-                      onChange={(e) => setColumnMapping(prev => ({ ...prev, [field]: parseInt(e.target.value) }))}
-                    >
-                      <option value={-1}>{t("cb.mapping.select")}</option>
-                      {detectData.headers.map((h, i) => h && (
-                        <option key={i} value={i}>{String.fromCharCode(65 + i)} — {h}</option>
-                      ))}
-                    </select>
-                    <p className="text-[9px]" style={{ color: "var(--muted)" }}>{t(`cb.mapping.help.${field}`)}</p>
-                    {samples.length > 0 && (
-                      <p className="text-[9px] mt-0.5 font-mono truncate" style={{ color: "var(--foreground)" }}>{samples.join(", ")}</p>
+
+                    {/* Assignment */}
+                    {assigned ? (
+                      <div>
+                        <div className="text-[22px] font-bold font-mono leading-none mb-1" style={{ color: fc.text, letterSpacing: "-0.03em" }}>
+                          {colLetter}
+                        </div>
+                        {samples.length > 0 && (
+                          <div className="text-[9px] font-mono leading-relaxed" style={{ color: "var(--muted)" }}>
+                            {samples.map((s, i) => <span key={i}>{i > 0 ? ", " : ""}<span style={{ color: fc.text, opacity: 0.8 }}>{s}</span></span>)}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[9px] leading-snug" style={{ color: isActive ? fc.text : "var(--muted)" }}>
+                        {isActive ? (
+                          <span className="font-medium">↑ click a column</span>
+                        ) : (
+                          <span>{t(`cb.mapping.help.${field}`)}</span>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
               })}
             </div>
-            <div className="flex justify-end mt-3">
+
+            {/* How stacking works (collapsible) */}
+            <div className="px-5 pb-4">
+              <button
+                onClick={() => setShowHowItWorks(!showHowItWorks)}
+                className="flex items-center gap-1.5 text-[11px] mb-2 transition-colors"
+                style={{ color: "var(--muted)" }}
+              >
+                <span className="text-[9px]">{showHowItWorks ? "▼" : "▶"}</span>
+                {t("cb.mapping.how_it_works")}
+              </button>
+              {showHowItWorks && (
+                <div className="p-3 rounded-lg text-[10px]" style={{ background: "var(--surface)", border: "1px solid var(--border)", animation: "fadeSlideIn 0.2s ease" }}>
+                  <ul className="space-y-1" style={{ color: "var(--muted)" }}>
+                    <li>· {t("cb.mapping.how_grouping")}</li>
+                    <li>· {t("cb.mapping.how_quantity")}</li>
+                    <li>· {t("cb.mapping.how_program")}</li>
+                    <li>· {t("cb.mapping.how_names")}</li>
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Confirm button */}
+            <div className="px-5 pb-5 flex items-center justify-between gap-3" style={{ borderTop: "1px solid var(--border)", paddingTop: "16px" }}>
+              <p className="text-[10px]" style={{ color: "var(--muted)" }}>
+                {REQUIRED_FIELDS.filter(f => (columnMapping[f] ?? -1) < 0).length === 0
+                  ? <span style={{ color: "var(--success)" }}>✓ {t("cb.mapping.all_assigned")}</span>
+                  : <span>{REQUIRED_FIELDS.filter(f => (columnMapping[f] ?? -1) < 0).length} {t("cb.mapping.fields_remaining")}</span>
+                }
+              </p>
               <button
                 className="accent-btn text-xs"
                 onClick={confirmMapping}
-                disabled={excelLoading || Object.values(columnMapping).some(v => v < 0)}
+                disabled={excelLoading || REQUIRED_FIELDS.some(f => (columnMapping[f] ?? -1) < 0)}
               >
-                {excelLoading ? t("cb.excel.parsing") : t("cb.mapping.confirm")}
+                {excelLoading ? (
+                  <span className="flex items-center gap-2"><span className="spinner" style={{ width: "12px", height: "12px", borderWidth: "1.5px" }} />{t("cb.excel.parsing")}</span>
+                ) : t("cb.mapping.confirm")}
               </button>
             </div>
           </div>
@@ -834,13 +1093,25 @@ export default function ComboBuilder() {
         {/* Pipeline Stats */}
         {parseData && (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-center sm:gap-3" style={{ animation: "slideUp 0.4s ease 0.1s forwards", opacity: 0, overflow: "visible", paddingTop: "12px" }}>
-            <StatCard value={parseData.entries_count} label={t("cb.stats.names")} delay={0.05} />
+            <StatCard
+              value={parseData.entries_count} label={t("cb.stats.names")} delay={0.05}
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
+            />
             <span className="stat-arrow hidden sm:block">→</span>
-            <StatCard value={parseData.groups.length} label={t("cb.stats.groups")} delay={0.1} />
+            <StatCard
+              value={parseData.groups.length} label={t("cb.stats.groups")} delay={0.1}
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>}
+            />
             <span className="stat-arrow hidden sm:block">→</span>
-            <StatCard value={parseData.combo_count} label={t("cb.stats.output")} delay={0.15} />
+            <StatCard
+              value={parseData.combo_count} label={t("cb.stats.output")} delay={0.15}
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
+            />
             <span className="stat-arrow hidden sm:block">→</span>
-            <StatCard value={parseData.total_slots} label={t("cb.stats.slots")} delay={0.2} />
+            <StatCard
+              value={parseData.total_slots} label={t("cb.stats.slots")} delay={0.2}
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>}
+            />
           </div>
         )}
 
@@ -850,13 +1121,15 @@ export default function ComboBuilder() {
             <div className="glass-panel overflow-hidden flex flex-col min-h-[200px] sm:min-h-[300px]">
               <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
                 <span className="text-xs font-medium">{t("cb.files.title")} <span className="font-normal" style={{ color: "var(--muted)" }}>{selectedCombos.size}/{totalCombos}</span></span>
-                <div className="flex gap-1"><button onClick={selectAll} className="glass-btn text-[10px]">{t("cb.files.all")}</button><button onClick={deselectAll} className="glass-btn text-[10px]">{t("cb.files.none")}</button></div>
+                <div className="flex gap-1">
+                  <button onClick={selectAll} className="glass-btn text-[10px]">{t("cb.files.all")}</button>
+                  <button onClick={deselectAll} className="glass-btn text-[10px]">{t("cb.files.none")}</button>
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto custom-scroll">
                 {parseData.groups.map((group) => {
                   const gk = `${group.machine_program}_${group.com_no}`;
                   const exp = expandedGroups.has(gk);
-                  const sel = group.combos.filter((c) => selectedCombos.has(c.filename)).length;
                   return (
                     <div key={gk} style={{ borderBottom: "1px solid var(--border)" }}>
                       <button className="w-full flex flex-col px-4 py-3 sm:py-2.5 text-left transition-colors" style={{ background: exp ? "var(--surface)" : "transparent" }} onClick={() => toggleGroup(gk)}>
@@ -866,9 +1139,7 @@ export default function ComboBuilder() {
                           <span className="text-[10px] ml-auto tabular-nums hidden sm:inline" style={{ color: "var(--muted)" }}>
                             {group.entry_count} {t("names")} → {group.combos.length} {group.combos.length === 1 ? t("file") : t("files")} ({group.total_slots} {t("slots")})
                           </span>
-                          <span className="text-[10px] ml-auto tabular-nums sm:hidden" style={{ color: "var(--muted)" }}>
-                            {group.combos.length}f
-                          </span>
+                          <span className="text-[10px] ml-auto tabular-nums sm:hidden" style={{ color: "var(--muted)" }}>{group.combos.length}f</span>
                         </div>
                       </button>
                       {exp && group.combos.map((combo, ci) => (
@@ -1014,7 +1285,7 @@ export default function ComboBuilder() {
               {!exporting && !downloadUrl && !exported && !dstUploaded && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.export.need_dst")}</p>}
             </div>
             <div className="flex flex-col items-stretch sm:items-end gap-1">
-              <span className="text-[9px] font-medium uppercase tracking-wider text-center sm:text-right" style={{ color: "var(--accent)", opacity: 0.5 }}>{t("cb.step3")}</span>
+              <span className="text-[9px] font-medium uppercase tracking-wider text-center sm:text-right" style={{ color: "var(--accent)", opacity: 0.5 }}>03</span>
               <button className="accent-btn w-full sm:w-auto" disabled={selectedCombos.size === 0 || !dstUploaded || exporting} onClick={handleExport}>
                 {exporting ? t("cb.export.exporting") : `${t("cb.export.btn")} ${selectedCombos.size} ${selectedCombos.size !== 1 ? t("cb.export.files") : t("cb.export.file")}`}
               </button>
