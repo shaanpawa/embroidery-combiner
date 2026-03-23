@@ -145,7 +145,7 @@ input:focus, textarea:focus, select:focus { outline: none; }
   box-shadow: 0 6px 20px rgba(38, 57, 122, 0.28);
 }
 .accent-btn:active { transform: translateY(0); }
-.accent-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+.accent-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; background: var(--border-strong); color: var(--muted); }
 
 .glass-btn {
   background: var(--glass);
@@ -376,4 +376,47 @@ html[data-theme="dark"] .micro-logo { filter: invert(1) brightness(1.8); }
 }
 .field-card-active {
   animation: fieldPulse 1.6s ease-in-out infinite;
+}
+
+/* ═══ Locked / Disabled Variants ═══ */
+.drop-zone-locked {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 24px 16px;
+  text-align: center;
+  background: var(--surface);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+@media (min-width: 640px) {
+  .drop-zone-locked { padding: 36px 24px; }
+}
+.glass-card-locked {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 28px;
+  cursor: not-allowed;
+}
+.glass-card-locked:hover { box-shadow: none; }
+
+/* ═══ Field Card Hover ═══ */
+.field-card {
+  transition: all 0.18s cubic-bezier(.4,0,.2,1);
+}
+.field-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+/* ═══ Session Card Hover ═══ */
+.session-card {
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+.session-card:hover {
+  border-left-color: var(--accent);
 }

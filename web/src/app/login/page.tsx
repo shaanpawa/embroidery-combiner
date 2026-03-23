@@ -51,8 +51,8 @@ function LoginContent() {
           <Image src="/micro-logo.svg" alt="Micro" width={100} height={28} className="micro-logo" />
           <div style={{ width: "1px", height: "28px", background: "var(--border-strong)", opacity: 0.4 }} />
           <div className="flex items-center gap-2.5">
-            <Image src="/ossia-mark.svg?v2" alt="" width={26} height={26} className="micro-logo" />
-            <span className="text-xl font-semibold" style={{ color: "var(--foreground)", letterSpacing: "-0.04em" }}>ossia</span>
+            <Image src="/ossia-mark.svg?v3" alt="" width={30} height={21} className="micro-logo" />
+            <span className="text-xl font-normal" style={{ color: "var(--foreground)", letterSpacing: "-0.035em" }}>ossia</span>
           </div>
         </div>
         <p className="text-[11px] tracking-widest uppercase" style={{ color: "var(--border-strong)", letterSpacing: "0.2em" }}>
@@ -62,7 +62,7 @@ function LoginContent() {
 
       {/* Sign-in card */}
       <div className="glass-card p-8 sm:p-10 w-full max-w-sm text-center" style={{ animation: "slideUp 0.6s ease 0.1s forwards", opacity: 0 }}>
-        <h1 className="text-lg font-semibold mb-2" style={{ color: "var(--foreground)" }}>{t("login.welcome")}</h1>
+        <h1 className="text-lg font-medium mb-2" style={{ color: "var(--foreground)" }}>{t("login.welcome")}</h1>
         <p className="text-xs mb-6" style={{ color: "var(--muted)" }}>{t("login.subtitle")}</p>
 
         {authError && (

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "../theme-provider";
 import { useLanguage } from "../i18n";
@@ -204,7 +204,7 @@ export default function EmbroideryStacker() {
   const [columnGapMm, setColumnGapMm] = useState(5);
   // New: interactive column assignment
   const [activeField, setActiveField] = useState<string | null>(null);
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showHowItWorks, setShowHowItWorks] = useState(true);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
@@ -212,7 +212,7 @@ export default function EmbroideryStacker() {
 
   // Auto-expand "how it works" when confidence is low
   useEffect(() => {
-    if (detectData) setShowHowItWorks(detectData.confidence === "low");
+    if (detectData) setShowHowItWorks(true);
   }, [detectData]);
 
   // Close active field on Escape
@@ -221,6 +221,66 @@ export default function EmbroideryStacker() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Per-field header pattern detection: "auto" vs "guessed"
+  const HEADER_PATTERNS: Record<string, RegExp> = {
+    program: /program|prog|โปรแกรม/i,
+    name_line1: /name.*1|first.*name|ชื่อ.*1|name line/i,
+    name_line2: /name.*2|last.*name|ชื่อ.*2|surname/i,
+    quantity: /qty|quantity|amount|count|pcs|จำนวน/i,
+    com_no: /com.*no|combo|คอมโบ/i,
+    machine_program: /machine|^m$|ma|เครื่อง/i,
+  };
+
+  const fieldDetectionSource = useMemo(() => {
+    if (!detectData) return {};
+    const sources: Record<string, "auto" | "guessed"> = {};
+    for (const field of FIELD_KEYS) {
+      const colIdx = columnMapping[field];
+      if (colIdx === undefined || colIdx < 0) continue;
+      const header = detectData.headers[colIdx];
+      if (header && HEADER_PATTERNS[field]?.test(header)) {
+        sources[field] = "auto";
+      } else {
+        sources[field] = "guessed";
+      }
+    }
+    return sources;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectData, columnMapping]);
+
+  // Proactive validation warnings on mapped columns
+  const mappingWarnings = useMemo(() => {
+    if (!detectData) return {};
+    const warnings: Record<string, string> = {};
+    const rows = detectData.preview_rows;
+
+    const qtyCol = columnMapping.quantity;
+    if (qtyCol !== undefined && qtyCol >= 0) {
+      const hasHigh = rows.some(r => qtyCol < r.length && Number(r[qtyCol]) > 50);
+      if (hasHigh) warnings.quantity = t("cb.mapping.warn.qty_high");
+    }
+
+    const progCol = columnMapping.program;
+    if (progCol !== undefined && progCol >= 0) {
+      const hasNonNum = rows.some(r => progCol < r.length && r[progCol] !== null && r[progCol] !== "" && isNaN(Number(r[progCol])));
+      if (hasNonNum) warnings.program = t("cb.mapping.warn.program_format");
+    }
+
+    const comCol = columnMapping.com_no;
+    if (comCol !== undefined && comCol >= 0) {
+      const hasAlpha = rows.some(r => comCol < r.length && r[comCol] !== null && /[a-zA-Z]{3,}/.test(String(r[comCol])));
+      if (hasAlpha) warnings.com_no = t("cb.mapping.warn.combo_format");
+    }
+
+    const maCol = columnMapping.machine_program;
+    if (maCol !== undefined && maCol >= 0) {
+      const hasBadMA = rows.some(r => maCol < r.length && r[maCol] !== null && r[maCol] !== "" && !/^MA/i.test(String(r[maCol])));
+      if (hasBadMA) warnings.machine_program = t("cb.mapping.warn.ma_format");
+    }
+
+    return warnings;
+  }, [detectData, columnMapping, t]);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -575,7 +635,7 @@ export default function EmbroideryStacker() {
                     return (
                       <div
                         key={s.session_id}
-                        className="glass-panel px-4 py-3 flex items-center gap-3 cursor-pointer transition-all hover:scale-[1.01]"
+                        className="glass-panel session-card px-4 py-3 flex items-center gap-3 cursor-pointer transition-all hover:scale-[1.01]"
                         style={{ animation: "fadeSlideIn 0.3s ease" }}
                         onClick={() => loadFullSession(s.session_id)}
                       >
@@ -596,18 +656,25 @@ export default function EmbroideryStacker() {
                         </div>
                         {/* Delete button */}
                         <button
-                          className="text-xs w-6 h-6 flex items-center justify-center rounded-lg transition-colors shrink-0"
-                          style={{ color: "var(--muted)", background: deleteConfirm === s.session_id ? "var(--danger)" : "transparent" }}
+                          className="text-xs h-6 flex items-center justify-center rounded-lg shrink-0"
+                          style={{
+                            color: deleteConfirm === s.session_id ? "white" : "var(--muted)",
+                            background: deleteConfirm === s.session_id ? "var(--danger)" : "transparent",
+                            minWidth: deleteConfirm === s.session_id ? "70px" : "24px",
+                            padding: deleteConfirm === s.session_id ? "0 8px" : "0",
+                            transition: "all 0.2s ease",
+                            fontSize: deleteConfirm === s.session_id ? "10px" : "12px",
+                            fontWeight: deleteConfirm === s.session_id ? 500 : 400,
+                          }}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (deleteConfirm === s.session_id) { deleteSession(s.session_id); }
                             else { setDeleteConfirm(s.session_id); setTimeout(() => setDeleteConfirm(null), 3000); }
                           }}
                           title={deleteConfirm === s.session_id ? t("cb.session.delete_confirm") : t("cb.session.delete")}
+                          aria-label={deleteConfirm === s.session_id ? t("cb.session.delete_confirm") : t("cb.session.delete")}
                         >
-                          <span style={{ color: deleteConfirm === s.session_id ? "white" : "var(--muted)" }}>
-                            {deleteConfirm === s.session_id ? "?" : "✕"}
-                          </span>
+                          {deleteConfirm === s.session_id ? t("cb.session.delete_confirm_label") : "✕"}
                         </button>
                       </div>
                     );
@@ -759,38 +826,48 @@ export default function EmbroideryStacker() {
           </div>
 
           {/* DST drop zone */}
-          <div
-            className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""} ${!mappingConfirmed ? "opacity-25 pointer-events-none" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }}
-            onDragLeave={() => setDstDragOver(false)}
-            onDrop={handleDstDrop}
-            onClick={() => mappingConfirmed && zipInputRef.current?.click()}
-          >
-            <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
-            {dstLoading ? (
-              <div className="flex flex-col items-center gap-3" style={{ animation: "fadeIn 0.2s ease" }}>
-                <div className="spinner" />
-                <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
-              </div>
-            ) : dstUploaded && dstData ? (
-              <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
-                <div className="flex items-center justify-center gap-2">
-                  <span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span>
-                  <span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span>
+          {!mappingConfirmed ? (
+            <div className="drop-zone-locked">
+              <svg className="mx-auto mb-2.5 mt-1.5" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--muted)", opacity: 0.6 }}>
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <p className="text-sm font-medium mb-0.5" style={{ color: "var(--muted)" }}>{t("cb.dst.title")}</p>
+              <p className="text-[11px]" style={{ color: "var(--muted)", opacity: 0.7 }}>{t("cb.dst.hint_disabled")}</p>
+            </div>
+          ) : (
+            <div
+              className={`drop-zone ${dstDragOver ? "drag-over" : ""} ${dstUploaded ? "has-file" : ""}`}
+              onDragOver={(e) => { e.preventDefault(); setDstDragOver(true); }}
+              onDragLeave={() => setDstDragOver(false)}
+              onDrop={handleDstDrop}
+              onClick={() => zipInputRef.current?.click()}
+            >
+              <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files) uploadDst(e.target.files); e.target.value = ""; }} />
+              {dstLoading ? (
+                <div className="flex flex-col items-center gap-3" style={{ animation: "fadeIn 0.2s ease" }}>
+                  <div className="spinner" />
+                  <p className="text-sm" style={{ color: "var(--accent)" }}>{t("cb.dst.uploading")}</p>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
-                  {dstData.needed_count > 0 ? <>{(dstData.needed_count - dstData.missing_programs.length)}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</> : <>{dstData.uploaded_count} {t("cb.dst.uploaded")}</>}
-                </p>
-              </div>
-            ) : (
-              <div>
-                <span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>02</span>
-                <svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                <p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p>
-                <p className="text-[11px]" style={{ color: "var(--muted)" }}>{mappingConfirmed ? t("cb.dst.hint") : t("cb.dst.hint_disabled")}</p>
-              </div>
-            )}
-          </div>
+              ) : dstUploaded && dstData ? (
+                <div style={{ animation: "fadeSlideIn 0.3s ease" }}>
+                  <div className="flex items-center justify-center gap-2">
+                    <span style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)", fontSize: "16px" }}>{dstData.all_matched ? "✓" : "⚠"}</span>
+                    <span className="text-sm font-medium" style={{ color: dstData.all_matched ? "var(--accent)" : "var(--warning)" }}>{dstFileName}</span>
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                    {dstData.needed_count > 0 ? <>{(dstData.needed_count - dstData.missing_programs.length)}/{dstData.needed_count} {t("cb.dst.matched")}{dstData.missing_programs.length > 0 && <span style={{ color: "var(--danger)" }}> · {dstData.missing_programs.length} {t("cb.dst.missing")}</span>}</> : <>{dstData.uploaded_count} {t("cb.dst.uploaded")}</>}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <span className="text-[9px] font-medium font-mono uppercase tracking-wider" style={{ color: "var(--accent)", opacity: 0.5 }}>02</span>
+                  <svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  <p className="text-sm font-medium mb-0.5">{t("cb.dst.title")}</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.dst.hint")}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Column Mapping (Interactive) ── */}
@@ -811,23 +888,40 @@ export default function EmbroideryStacker() {
                 {activeField && (
                   <button onClick={() => setActiveField(null)} className="glass-btn text-[10px]">Esc</button>
                 )}
-                {detectData.confidence !== "high" && (
-                  <span className="text-[9px] font-medium px-2 py-1 rounded-md" style={{ background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)" }}>{t("cb.mapping.needs_review")}</span>
-                )}
+                <span className="flex items-center gap-1.5 text-[10px] font-medium px-2.5 py-1 rounded-full" style={{
+                  background: detectData.confidence === "high" ? "rgba(22,163,74,0.1)"
+                    : detectData.confidence === "medium" ? "rgba(245,158,11,0.1)"
+                    : "rgba(239,68,68,0.1)",
+                  color: detectData.confidence === "high" ? "var(--success)"
+                    : detectData.confidence === "medium" ? "var(--warning)"
+                    : "var(--danger)",
+                }}>
+                  <span className="w-2 h-2 rounded-full" style={{
+                    background: "currentColor",
+                    animation: detectData.confidence === "low" ? "pulse 1.5s infinite" : "none",
+                  }} />
+                  {t(`cb.mapping.confidence_${detectData.confidence}`)}
+                </span>
               </div>
             </div>
 
             {/* Confidence warning banners */}
             {detectData.confidence === "low" && (
-              <div className="mx-5 mt-4 p-3 rounded-lg text-[10px]" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "var(--danger)" }}>
-                <p className="font-semibold mb-0.5">{t("cb.mapping.warn_low_title")}</p>
-                <p style={{ opacity: 0.9 }}>{t("cb.mapping.warn_low")}</p>
+              <div className="px-5 py-3.5 text-[11px] flex items-start gap-3" style={{ background: "rgba(239, 68, 68, 0.06)", borderBottom: "1px solid rgba(239, 68, 68, 0.2)", borderLeft: "4px solid var(--danger)", color: "var(--danger)" }}>
+                <span className="text-base leading-none shrink-0">⚠</span>
+                <div>
+                  <p className="font-semibold mb-0.5">{t("cb.mapping.warn_low_title")}</p>
+                  <p style={{ opacity: 0.85 }}>{t("cb.mapping.warn_low")}</p>
+                </div>
               </div>
             )}
             {detectData.confidence === "medium" && (
-              <div className="mx-5 mt-4 p-3 rounded-lg text-[10px]" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "var(--warning)" }}>
-                <p className="font-semibold mb-0.5">{t("cb.mapping.warn_medium_title")}</p>
-                <p style={{ opacity: 0.9 }}>{t("cb.mapping.warn_medium")}</p>
+              <div className="px-5 py-3.5 text-[11px] flex items-start gap-3" style={{ background: "rgba(245, 158, 11, 0.06)", borderBottom: "1px solid rgba(245, 158, 11, 0.2)", borderLeft: "4px solid var(--warning)", color: "var(--warning)" }}>
+                <span className="text-base leading-none shrink-0">⚠</span>
+                <div>
+                  <p className="font-semibold mb-0.5">{t("cb.mapping.warn_medium_title")}</p>
+                  <p style={{ opacity: 0.85 }}>{t("cb.mapping.warn_medium")}</p>
+                </div>
               </div>
             )}
 
@@ -929,8 +1023,10 @@ export default function EmbroideryStacker() {
                 return (
                   <div
                     key={field}
-                    className={isActive ? "field-card-active" : ""}
+                    className={`field-card ${isActive ? "field-card-active" : ""}`}
                     onClick={() => setActiveField(isActive ? null : field)}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveField(isActive ? null : field); } }}
                     style={{
                       padding: "12px",
                       borderRadius: "12px",
@@ -953,6 +1049,14 @@ export default function EmbroideryStacker() {
                       <span className="text-[10px] font-semibold" style={{ color: assigned || isActive ? fc.text : isMissing ? "var(--danger)" : "var(--muted)", letterSpacing: "0.02em" }}>
                         {t(`cb.mapping.field.${field}`)}
                       </span>
+                      {assigned && fieldDetectionSource[field] && (
+                        <span className="text-[7px] px-1.5 py-0.5 rounded" style={{
+                          background: fieldDetectionSource[field] === "auto" ? "rgba(22,163,74,0.1)" : "rgba(245,158,11,0.1)",
+                          color: fieldDetectionSource[field] === "auto" ? "var(--success)" : "var(--warning)",
+                        }}>
+                          {t(`cb.mapping.${fieldDetectionSource[field] === "auto" ? "auto_detected" : "position_guessed"}`)}
+                        </span>
+                      )}
                       {isOptional && (
                         <span className="ml-auto text-[7px] px-1.5 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)" }}>opt</span>
                       )}
@@ -977,6 +1081,15 @@ export default function EmbroideryStacker() {
                         ) : (
                           <span>{t(`cb.mapping.help.${field}`)}</span>
                         )}
+                      </div>
+                    )}
+                    {mappingWarnings[field] && (
+                      <div className="mt-1.5 text-[9px] px-2 py-1 rounded" style={{
+                        background: "rgba(245, 158, 11, 0.08)",
+                        color: "var(--warning)",
+                        border: "1px solid rgba(245, 158, 11, 0.2)",
+                      }}>
+                        ⚠ {mappingWarnings[field]}
                       </div>
                     )}
                   </div>

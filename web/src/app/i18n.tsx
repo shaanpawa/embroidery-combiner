@@ -90,6 +90,15 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.mapping.help.quantity": { en: "How many copies of this name", th: "จำนวนสำเนาของชื่อนี้" },
   "cb.mapping.help.com_no": { en: "Names with same number go in the same output file", th: "ชื่อที่มีเลขเดียวกันจะรวมอยู่ในไฟล์เดียวกัน" },
   "cb.mapping.help.machine_program": { en: "MA code (e.g., MA50310)", th: "รหัส MA (เช่น MA50310)" },
+  "cb.mapping.confidence_high": { en: "High confidence", th: "ความมั่นใจสูง" },
+  "cb.mapping.confidence_medium": { en: "Review suggested", th: "แนะนำให้ตรวจสอบ" },
+  "cb.mapping.confidence_low": { en: "Manual review required", th: "ต้องตรวจสอบด้วยตนเอง" },
+  "cb.mapping.auto_detected": { en: "auto", th: "อัตโนมัติ" },
+  "cb.mapping.position_guessed": { en: "guessed", th: "คาดเดา" },
+  "cb.mapping.warn.qty_high": { en: "Quantities exceed 50 — verify", th: "จำนวนเกิน 50 — ตรวจสอบ" },
+  "cb.mapping.warn.program_format": { en: "Should be numbers (DST file IDs)", th: "ควรเป็นตัวเลข (ID ไฟล์ DST)" },
+  "cb.mapping.warn.combo_format": { en: "Contains letters — expected numbers", th: "มีตัวอักษร — ควรเป็นตัวเลข" },
+  "cb.mapping.warn.ma_format": { en: "Doesn't match MA pattern (e.g., MA50310)", th: "ไม่ตรงรูปแบบ MA (เช่น MA50310)" },
   "cb.mapping.warn_low_title": { en: "⚠ Column detection failed", th: "⚠ ตรวจจับคอลัมน์ไม่สำเร็จ" },
   "cb.mapping.warn_low": { en: "Headers weren't recognised — every mapping below is a position-based guess and may be wrong. Verify each field carefully before confirming.", th: "ไม่พบส่วนหัวที่รู้จัก — การจับคู่ทั้งหมดเป็นการเดาจากตำแหน่ง กรุณาตรวจสอบทุกช่องอย่างละเอียดก่อนยืนยัน" },
   "cb.mapping.warn_medium_title": { en: "⚠ Some columns need review", th: "⚠ บางคอลัมน์ต้องตรวจสอบ" },
@@ -171,6 +180,7 @@ const translations: Record<string, Record<Lang, string>> = {
   // Session picker extras
   "cb.session.no_sessions": { en: "No sessions yet", th: "ยังไม่มีเซสชัน" },
   "cb.session.delete_confirm": { en: "Click again to confirm", th: "คลิกอีกครั้งเพื่อยืนยัน" },
+  "cb.session.delete_confirm_label": { en: "✕ Delete?", th: "✕ ลบ?" },
   "cb.session.delete": { en: "Delete session", th: "ลบเซสชัน" },
 
   // Excel preview table headers
