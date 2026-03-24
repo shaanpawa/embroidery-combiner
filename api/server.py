@@ -13,9 +13,12 @@ import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 
+import re
+
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.gzip import GZipMiddleware
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,6 +35,31 @@ from api.database import (
 from api.auth import get_current_user
 
 app = FastAPI(title="Micro Automation API")
+
+# Compress JSON responses
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# ---------------------------------------------------------------------------
+# Security constants
+# ---------------------------------------------------------------------------
+MAX_EXCEL_SIZE = 10 * 1024 * 1024       # 10 MB
+MAX_DST_SIZE = 5 * 1024 * 1024          # 5 MB per DST file
+MAX_ZIP_SIZE = 100 * 1024 * 1024        # 100 MB compressed
+MAX_ZIP_UNCOMPRESSED = 500 * 1024 * 1024 # 500 MB uncompressed
+MAX_ZIP_FILES = 1000                     # max files in zip
+
+
+def _safe_filename(name: str | None, fallback: str = "file") -> str:
+    """Sanitise an uploaded filename to prevent path traversal."""
+    if not name:
+        return fallback
+    # Take only the basename, strip any path separators
+    name = os.path.basename(name)
+    # Remove any remaining suspicious characters
+    name = re.sub(r'[^\w.\-() ]', '_', name)
+    if not name or name.startswith('.'):
+        return fallback
+    return name
 
 
 @app.get("/api/health")
@@ -174,9 +202,12 @@ async def detect_columns_endpoint(
     sid, session = _ensure_session(session_id, user["email"])
 
     session_dir = get_session_dir(sid)
-    excel_path = os.path.join(session_dir, file.filename or "order.xlsx")
+    content = await file.read()
+    if len(content) > MAX_EXCEL_SIZE:
+        raise HTTPException(413, f"Excel file too large (max {MAX_EXCEL_SIZE // 1024 // 1024}MB)")
+    safe_name = _safe_filename(file.filename, "order.xlsx")
+    excel_path = os.path.join(session_dir, safe_name)
     with open(excel_path, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     update_session(sid, excel_filename=file.filename)
@@ -215,9 +246,12 @@ async def parse_excel_endpoint(
     # If a new file is uploaded, save it. Otherwise use existing Excel in session.
     session_dir = get_session_dir(sid)
     if file:
-        excel_path = os.path.join(session_dir, file.filename or "order.xlsx")
+        content = await file.read()
+        if len(content) > MAX_EXCEL_SIZE:
+            raise HTTPException(413, f"Excel file too large (max {MAX_EXCEL_SIZE // 1024 // 1024}MB)")
+        safe_name = _safe_filename(file.filename, "order.xlsx")
+        excel_path = os.path.join(session_dir, safe_name)
         with open(excel_path, "wb") as f:
-            content = await file.read()
             f.write(content)
         update_session(sid, excel_filename=file.filename)
     else:
@@ -270,20 +304,38 @@ async def upload_dst_endpoint(
 
     if zip_file and zip_file.filename and zip_file.filename.lower().endswith(".zip"):
         content = await zip_file.read()
+        if len(content) > MAX_ZIP_SIZE:
+            raise HTTPException(413, f"ZIP file too large (max {MAX_ZIP_SIZE // 1024 // 1024}MB)")
         with zipfile.ZipFile(BytesIO(content)) as zf:
+            # Zip bomb protection: check uncompressed size and file count
+            infos = zf.infolist()
+            if len(infos) > MAX_ZIP_FILES:
+                raise HTTPException(400, f"ZIP contains too many files (max {MAX_ZIP_FILES})")
+            total_uncompressed = sum(i.file_size for i in infos)
+            if total_uncompressed > MAX_ZIP_UNCOMPRESSED:
+                raise HTTPException(413, f"ZIP uncompressed size too large (max {MAX_ZIP_UNCOMPRESSED // 1024 // 1024}MB)")
             for name in zf.namelist():
                 basename = os.path.basename(name)
                 if basename.lower().endswith(".dst") and not basename.startswith("."):
-                    target = os.path.join(dst_dir, basename)
+                    safe_name = _safe_filename(basename, "unnamed.dst")
+                    target = os.path.join(dst_dir, safe_name)
+                    # Verify path stays within dst_dir
+                    if not os.path.realpath(target).startswith(os.path.realpath(dst_dir)):
+                        continue
                     with open(target, "wb") as out:
                         out.write(zf.read(name))
 
     if files:
         for f in files:
             if f.filename and f.filename.lower().endswith(".dst"):
-                target = os.path.join(dst_dir, f.filename)
+                content = await f.read()
+                if len(content) > MAX_DST_SIZE:
+                    continue  # skip oversized individual DST files
+                safe_name = _safe_filename(f.filename, "unnamed.dst")
+                target = os.path.join(dst_dir, safe_name)
+                if not os.path.realpath(target).startswith(os.path.realpath(dst_dir)):
+                    continue
                 with open(target, "wb") as out:
-                    content = await f.read()
                     out.write(content)
 
     for fname in os.listdir(dst_dir):
@@ -382,12 +434,12 @@ async def export_endpoint(
             zf.write(r.output_path, os.path.basename(r.output_path))
     zip_buffer.seek(0)
 
-    session_name = session.get("name", session_id)
+    session_name = re.sub(r'[^\w\-. ]', '_', session.get("name", session_id))
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f"attachment; filename=combos_{session_name}.zip",
+            "Content-Disposition": f'attachment; filename="combos_{session_name}.zip"',
             "X-Export-Success": str(len(success)),
             "X-Export-Failed": str(len(failed)),
         },
@@ -499,7 +551,7 @@ async def remove_excel(session_id: str, user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dev/load-sample")
-async def dev_load_sample():
+async def dev_load_sample(user: dict = Depends(get_current_user)):
     """Dev endpoint: auto-load real Excel + DST files for testing."""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     test_data = os.path.join(project_root, "test_data")

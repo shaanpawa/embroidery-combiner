@@ -73,7 +73,18 @@ html[data-theme="dark"] {
 }
 
 /* ═══ Base ═══ */
-* { transition: background-color 0.3s cubic-bezier(.4,0,.2,1), color 0.3s cubic-bezier(.4,0,.2,1), border-color 0.3s cubic-bezier(.4,0,.2,1), box-shadow 0.3s cubic-bezier(.4,0,.2,1); }
+/* Theme transition — only on elements that need it (not * which kills Safari perf) */
+body,
+body::before,
+.glass-card,
+.glass-panel,
+.stat-card,
+.drop-zone,
+.nav-btn,
+.theme-toggle,
+.accent-btn {
+  transition: background-color 0.3s cubic-bezier(.4,0,.2,1), color 0.3s cubic-bezier(.4,0,.2,1), border-color 0.3s cubic-bezier(.4,0,.2,1), box-shadow 0.3s cubic-bezier(.4,0,.2,1);
+}
 
 body {
   background: var(--background);

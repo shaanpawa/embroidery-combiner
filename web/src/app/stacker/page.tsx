@@ -363,7 +363,7 @@ export default function EmbroideryStacker() {
     setLoadingSession(true);
     try {
       const res = await authFetch(`${API}/api/session/${sid}/full`);
-      if (!res.ok) throw new Error(`Failed to load session: ${res.status}`);
+      if (!res.ok) throw new Error(`${t("err.load_session")}: ${res.status}`);
       const data: FullSession = await res.json();
       applyFullSession(data);
       setSessionStarted(true);
@@ -376,7 +376,7 @@ export default function EmbroideryStacker() {
   const deleteSession = useCallback(async (sid: string) => {
     try {
       const res = await authFetch(`${API}/api/session/${sid}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
+      if (!res.ok) throw new Error(t("err.delete_fail"));
       showToast(t("ok.session_deleted"), "success");
       fetchSessions();
       if (sid === sessionId) {
@@ -390,7 +390,7 @@ export default function EmbroideryStacker() {
     if (!sessionId) return;
     try {
       const res = await authFetch(`${API}/api/session/${sessionId}/excel`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to remove Excel");
+      if (!res.ok) throw new Error(t("err.remove_excel_fail"));
       setExcelFile(""); setParseData(null); setSelectedCombos(new Set()); setExpandedGroups(new Set());
       setPreviewCombo(null); setDownloadUrl(""); setExportProgress(0); setShowExcelPreview(false);
       setExported(false); setDetectData(null); setColumnMapping({}); setMappingConfirmed(false);
@@ -407,7 +407,7 @@ export default function EmbroideryStacker() {
     const form = new FormData(); form.append("file", file);
     try {
       const res = await authFetch(`${API}/api/detect-columns`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
       const data: DetectResponse = await res.json();
       setDetectData(data);
       setColumnMapping(data.detected_mapping);
@@ -426,7 +426,7 @@ export default function EmbroideryStacker() {
     form.append("column_map", JSON.stringify(columnMapping));
     try {
       const res = await authFetch(`${API}/api/parse-excel`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
       const data = await res.json();
       if (data.entries_count === 0) {
         showToast(t("err.no_entries"), "warning");
@@ -452,7 +452,7 @@ export default function EmbroideryStacker() {
     else { dstFiles.forEach((f) => form.append("files", f)); setDstFileName(`${dstFiles.length} DST files`); }
     try {
       const res = await authFetch(`${API}/api/upload-dst`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
       const data: DstResponse = await res.json();
       setDstData(data); setDstUploaded(true);
       if (data.uploaded_count === 0) { showToast(t("err.no_dst_content")); setDstUploaded(false); }
@@ -481,7 +481,7 @@ export default function EmbroideryStacker() {
       const res = await authFetch(`${API}/api/export`, { method: "POST", body: form }, 300_000);
       clearInterval(elapsedTimer);
       setExportElapsed(Math.round((Date.now() - startTime) / 1000));
-      if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
+      if (!res.ok) throw new Error(await res.text().catch(() => t("err.export_fail")));
       setExportProgress(-1);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -499,7 +499,7 @@ export default function EmbroideryStacker() {
     setExcelLoading(true); resetSession();
     try {
       const res = await authFetch(`${API}/api/dev/load-sample`);
-      if (!res.ok) throw new Error("API not running on port 8000");
+      if (!res.ok) throw new Error(t("err.api_not_running"));
       const data = await res.json();
       setExcelFile("nameorder_04032026-2 add column.xlsx");
       setMappingConfirmed(true);
@@ -608,7 +608,7 @@ export default function EmbroideryStacker() {
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && startSession()}
-                placeholder="e.g. 18 Mar 2026"
+                placeholder={t("cb.session.date_placeholder")}
                 className="w-full text-sm px-4 py-2.5 rounded-xl bg-transparent mb-4"
                 style={{ border: "1px solid var(--border)", color: "var(--foreground)" }}
                 autoFocus
@@ -811,7 +811,7 @@ export default function EmbroideryStacker() {
                     className="w-5 h-5 flex items-center justify-center rounded-md text-[10px] transition-colors"
                     style={{ color: "var(--muted)", background: "var(--surface)" }}
                     onClick={(e) => { e.stopPropagation(); removeExcel(); }}
-                    title="Remove Excel"
+                    title={t("cb.excel.remove")}
                   >✕</button>
                 </div>
               </div>
@@ -886,7 +886,7 @@ export default function EmbroideryStacker() {
               </div>
               <div className="flex items-center gap-2">
                 {activeField && (
-                  <button onClick={() => setActiveField(null)} className="glass-btn text-[10px]">Esc</button>
+                  <button onClick={() => setActiveField(null)} className="glass-btn text-[10px]">{t("cb.mapping.esc")}</button>
                 )}
                 <span className="flex items-center gap-1.5 text-[10px] font-medium px-2.5 py-1 rounded-full" style={{
                   background: detectData.confidence === "high" ? "rgba(22,163,74,0.1)"

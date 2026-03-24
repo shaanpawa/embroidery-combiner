@@ -172,6 +172,12 @@ const translations: Record<string, Record<Lang, string>> = {
   "err.delete_session": { en: "Failed to delete session", th: "ลบเซสชันไม่สำเร็จ" },
   "err.load_sample": { en: "Failed to load sample data", th: "โหลดข้อมูลตัวอย่างไม่สำเร็จ" },
 
+  // Error messages (server/network)
+  "err.server": { en: "Server error", th: "เซิร์ฟเวอร์ผิดพลาด" },
+  "err.delete_fail": { en: "Delete failed", th: "ลบไม่สำเร็จ" },
+  "err.remove_excel_fail": { en: "Failed to remove Excel", th: "ลบข้อมูล Excel ไม่สำเร็จ" },
+  "err.api_not_running": { en: "API not running on port 8000", th: "API ไม่ทำงานบนพอร์ต 8000" },
+
   // Success messages
   "ok.session_deleted": { en: "Session deleted", th: "ลบเซสชันแล้ว" },
   "ok.excel_removed": { en: "Excel data removed", th: "ลบข้อมูล Excel แล้ว" },
@@ -191,6 +197,11 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.table.combo": { en: "Combo", th: "คอมโบ" },
   "cb.table.machine": { en: "MA", th: "MA" },
   "cb.table.group": { en: "→ Group", th: "→ กลุ่ม" },
+
+  // UI elements
+  "cb.excel.remove": { en: "Remove Excel", th: "ลบ Excel" },
+  "cb.session.date_placeholder": { en: "e.g. 18 Mar 2026", th: "เช่น 18 มี.ค. 2569" },
+  "cb.mapping.esc": { en: "Esc", th: "ยกเลิก" },
 
   // Nav
   "nav.signout": { en: "Sign out", th: "ออกจากระบบ" },

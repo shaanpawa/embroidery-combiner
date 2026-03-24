@@ -21,6 +21,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (saved) {
       setTheme(saved);
       document.documentElement.setAttribute("data-theme", saved);
+      // Force Safari to repaint backdrop-filter elements after CSS variable change
+      requestAnimationFrame(() => {
+        document.documentElement.style.transform = "translateZ(0)";
+        requestAnimationFrame(() => {
+          document.documentElement.style.transform = "";
+        });
+      });
     }
   }, []);
 
@@ -29,6 +36,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setTheme(next);
     localStorage.setItem("theme", next);
     document.documentElement.setAttribute("data-theme", next);
+    // Force Safari to repaint backdrop-filter elements after CSS variable change
+    requestAnimationFrame(() => {
+      document.documentElement.style.transform = "translateZ(0)";
+      requestAnimationFrame(() => {
+        document.documentElement.style.transform = "";
+      });
+    });
   };
 
   return (
