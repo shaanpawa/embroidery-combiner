@@ -18,6 +18,15 @@ async function getToken(): Promise<string | null> {
   }
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [1000, 3000]; // delays before attempt 2 and 3
+
+function isRetryable(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === "AbortError") return true;
+  if (e instanceof TypeError) return true; // network failure / DNS / connection refused
+  return false;
+}
+
 export async function authFetch(
   url: string,
   options: RequestInit = {},
@@ -29,31 +38,41 @@ export async function authFetch(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  // Timeout via AbortController — prevents infinite hangs if backend is cold/down
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let lastError: Error | null = null;
 
-  let res: Response;
-  try {
-    res = await fetch(url, { ...options, headers, signal: controller.signal });
-  } catch (e) {
-    clearTimeout(timer);
-    if (e instanceof DOMException && e.name === "AbortError") {
-      throw new Error("Request timed out — server may be starting up. Try again in 30 seconds.");
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt - 1]));
     }
-    throw new Error("Cannot reach server. Check your internet connection.");
-  }
-  clearTimeout(timer);
 
-  if (res.status === 401 || res.status === 403) {
-    cachedToken = null;
-    tokenFetchedAt = 0;
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, { ...options, headers, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (res.status === 401 || res.status === 403) {
+        cachedToken = null;
+        tokenFetchedAt = 0;
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+      }
+
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      if (e instanceof DOMException && e.name === "AbortError") {
+        lastError = new Error("Request timed out — server may be starting up.");
+      } else {
+        lastError = new Error("Cannot reach server — it may be starting up.");
+      }
+      if (!isRetryable(e)) break; // non-retryable error, stop immediately
     }
   }
 
-  return res;
+  throw lastError ?? new Error("Cannot reach server. Please try again.");
 }
 
 export function clearAuthToken() {
@@ -63,13 +82,37 @@ export function clearAuthToken() {
 
 /**
  * Ping the backend to wake it up (Render free tier sleeps after 15min).
- * Call this early (e.g. on page load) so the backend is warm by the time
- * the user uploads files.
+ * Polls up to `maxAttempts` times with `intervalMs` delay between attempts.
+ * Calls `onStatus` so the UI can show connection state.
  */
-export async function warmupBackend(apiUrl: string): Promise<void> {
-  try {
-    await fetch(`${apiUrl}/api/health`, { method: "GET", mode: "cors" });
-  } catch {
-    // Ignore — best effort
+export async function warmupBackend(
+  apiUrl: string,
+  onStatus?: (status: "connecting" | "ready" | "failed") => void,
+  maxAttempts = 10,
+  intervalMs = 2000,
+): Promise<boolean> {
+  onStatus?.("connecting");
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${apiUrl}/api/health`, {
+        method: "GET",
+        mode: "cors",
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        onStatus?.("ready");
+        return true;
+      }
+    } catch {
+      // server not up yet — retry
+    }
+    if (i < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
   }
+  onStatus?.("failed");
+  return false;
 }

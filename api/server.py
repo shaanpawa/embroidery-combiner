@@ -15,7 +15,7 @@ from io import BytesIO
 
 import re
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Depends
+from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -32,10 +32,24 @@ from api.database import (
     get_db, create_session, get_session, update_session,
     delete_session as db_delete_session, list_sessions,
     get_session_dir, get_dst_dir, get_output_dir,
+    cleanup_old_sessions,
 )
 from api.auth import get_current_user
 
-app = FastAPI(title="Micro Automation API")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: clean up old sessions from previous runs
+    deleted = cleanup_old_sessions(max_age_hours=24)
+    if deleted:
+        print(f"[startup] Cleaned up {deleted} expired session(s)")
+    yield
+
+app = FastAPI(title="Micro Automation API", lifespan=lifespan)
+
+# Semaphore to limit concurrent exports (prevents memory exhaustion)
+_export_semaphore = asyncio.Semaphore(2)
 
 # Compress JSON responses
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -64,8 +78,9 @@ def _safe_filename(name: str | None, fallback: str = "file") -> str:
 
 
 @app.get("/api/health")
-async def health():
+async def health(background_tasks: BackgroundTasks):
     """Health check — also used to wake up Render free tier before user needs it."""
+    background_tasks.add_task(cleanup_old_sessions, 24)
     return {"status": "ok"}
 
 
@@ -395,6 +410,12 @@ async def export_endpoint(
     output_dir = get_output_dir(session_id)
     dst_dir = get_dst_dir(session_id)
 
+    # Limit concurrent exports to prevent memory exhaustion
+    try:
+        await asyncio.wait_for(_export_semaphore.acquire(), timeout=60)
+    except asyncio.TimeoutError:
+        raise HTTPException(503, "Server is busy with other exports. Please try again shortly.")
+
     # Export to temp dir first — only replace output_dir on success
     # Run CPU-bound combining in a thread so we don't block the event loop
     tmp_dir = tempfile.mkdtemp(prefix="combo_export_")
@@ -419,6 +440,7 @@ async def export_endpoint(
             shutil.move(r.output_path, dest)
             r.output_path = dest
     finally:
+        _export_semaphore.release()
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     update_session(

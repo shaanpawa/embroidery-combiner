@@ -35,6 +35,10 @@ const translations: Record<string, Record<Lang, string>> = {
   "home.coming_soon": { en: "Coming Soon", th: "เร็วๆ นี้" },
   "home.footer": { en: "PRODUCTION TOOLS FOR MICRO EMBROIDERY CO.", th: "เครื่องมือการผลิตสำหรับ MICRO EMBROIDERY CO." },
 
+  // Stacker - Connection
+  "cb.connecting": { en: "Connecting to server...", th: "กำลังเชื่อมต่อเซิร์ฟเวอร์..." },
+  "cb.connect_failed": { en: "Could not reach server.", th: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้" },
+  "cb.retry": { en: "Retry", th: "ลองอีกครั้ง" },
   // Stacker - Session Picker
   "cb.title": { en: "Embroidery Stacker", th: "Embroidery Stacker" },
   "cb.session.subtitle": { en: "Create a new session to start stacking embroidery name programs into production files.", th: "สร้างเซสชันใหม่เพื่อเริ่มรวมโปรแกรมชื่อปักเป็นไฟล์การผลิต" },

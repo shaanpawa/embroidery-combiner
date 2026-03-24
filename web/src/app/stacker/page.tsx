@@ -216,6 +216,7 @@ export default function EmbroideryStacker() {
   const [assignResult, setAssignResult] = useState<{assignments_count: number; ma_summary: {ma: string; size: string; count: number}[]; com_summary: {ma: string; com: number; fabric_colour: string; frame_colour: string; embroidery_colour: string; count: number}[]; warnings: string[]} | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignDownloading, setAssignDownloading] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "ready" | "failed">("connecting");
   const assignExcelInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -301,7 +302,21 @@ export default function EmbroideryStacker() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchSessions(); warmupBackend(API); }, [fetchSessions]);
+  useEffect(() => {
+    fetchSessions();
+    warmupBackend(API, setBackendStatus);
+  }, [fetchSessions]);
+
+  // Clean up session when user leaves the page
+  useEffect(() => {
+    const cleanup = () => {
+      if (sessionId) {
+        fetch(`${API}/api/session/${sessionId}`, { method: "DELETE", keepalive: true });
+      }
+    };
+    window.addEventListener("beforeunload", cleanup);
+    return () => window.removeEventListener("beforeunload", cleanup);
+  }, [sessionId]);
 
   const saveSessionName = useCallback(async (sid: string, name: string) => {
     const form = new FormData(); form.append("session_id", sid); form.append("name", name);
@@ -674,14 +689,29 @@ export default function EmbroideryStacker() {
     .filter(([, v]) => v >= 0)
     .reduce((acc, [field, col]) => { acc[col] = field; return acc; }, {} as Record<number, string>);
 
+  const retryWarmup = useCallback(() => {
+    setBackendStatus("connecting");
+    warmupBackend(API, setBackendStatus);
+  }, []);
+
   const startSession = () => { if (!sessionName.trim()) return; setSessionStarted(true); };
   const startDemoSession = () => { setSessionName("Demo Session"); setSessionStarted(true); setTimeout(() => loadSampleData(), 100); };
+
+  const connectingBanner = backendStatus !== "ready" ? (
+    <div className="w-full text-center text-xs py-2 px-4" style={{ background: backendStatus === "failed" ? "var(--danger)" : "var(--accent)", color: "white" }}>
+      {backendStatus === "connecting" && <>{t("cb.connecting") || "Connecting to server..."}</>}
+      {backendStatus === "failed" && (
+        <>{t("cb.connect_failed") || "Could not reach server."} <button onClick={retryWarmup} className="underline ml-1 font-medium">{t("cb.retry") || "Retry"}</button></>
+      )}
+    </div>
+  ) : null;
 
   /* ── Session Picker Screen ── */
   if (!sessionStarted) {
     return (
       <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        {connectingBanner}
 
         {/* Nav */}
         <nav className="flex items-center gap-4 px-6 py-3.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -806,6 +836,7 @@ export default function EmbroideryStacker() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      {connectingBanner}
 
       {/* Nav */}
       <nav className="flex items-center gap-4 px-6 py-3.5 shrink-0" style={{ borderBottom: "1px solid var(--border)", animation: "fadeIn 0.3s ease" }}>

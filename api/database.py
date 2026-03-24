@@ -236,3 +236,35 @@ def get_dst_dir(sid: str) -> str:
 def get_output_dir(sid: str) -> str:
     """Convenience: return {session_dir}/output/."""
     return os.path.join(get_session_dir(sid), "output")
+
+
+# ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
+
+def cleanup_old_sessions(max_age_hours: int = 24) -> int:
+    """Delete sessions older than *max_age_hours* and their directories.
+
+    Returns the number of sessions deleted.
+    """
+    import shutil
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
+    db = get_db()
+
+    with _db_lock:
+        rows = db.execute(
+            "SELECT id FROM sessions WHERE updated_at < ?", (cutoff,)
+        ).fetchall()
+        deleted = 0
+        for row in rows:
+            sid = row["id"]
+            session_dir = os.path.join(SESSIONS_DIR, sid)
+            if os.path.isdir(session_dir):
+                shutil.rmtree(session_dir, ignore_errors=True)
+            db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+            deleted += 1
+        if deleted:
+            db.commit()
+    return deleted
