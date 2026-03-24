@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.excel_parser import (
     NameEntry, parse_excel, detect_columns, group_entries, generate_all_combos,
+    detect_assign_columns, auto_assign_ma_com, export_assigned_excel,
 )
 from app.core.pipeline import export_all
 from api.database import (
@@ -444,6 +445,187 @@ async def export_endpoint(
             "X-Export-Failed": str(len(failed)),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Auto-assign MA & COM
+# ---------------------------------------------------------------------------
+
+@app.post("/api/detect-assign-columns")
+async def detect_assign_columns_endpoint(
+    file: UploadFile = File(...),
+    session_id: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Upload Excel and auto-detect columns for MA/COM assignment (size, fabric, frame, embroidery)."""
+    sid, session = _ensure_session(session_id, user["email"])
+    session_dir = get_session_dir(sid)
+
+    content = await file.read()
+    if len(content) > MAX_EXCEL_SIZE:
+        raise HTTPException(413, f"Excel file too large (max {MAX_EXCEL_SIZE // 1024 // 1024}MB)")
+    safe_name = _safe_filename(file.filename, "order.xlsx")
+    excel_path = os.path.join(session_dir, safe_name)
+    with open(excel_path, "wb") as f:
+        f.write(content)
+
+    update_session(sid, excel_filename=file.filename)
+
+    detection = detect_assign_columns(excel_path)
+
+    return {
+        "session_id": sid,
+        "excel_filename": file.filename,
+        "headers": detection.headers,
+        "preview_rows": detection.preview_rows,
+        "detected_mapping": detection.detected_mapping,
+        "confidence": detection.confidence,
+    }
+
+
+@app.post("/api/auto-assign")
+async def auto_assign_endpoint(
+    session_id: str = Form(...),
+    column_map: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Run auto-assignment of MA & COM using confirmed column mapping."""
+    session = _require_session(session_id)
+    session_dir = get_session_dir(session_id)
+
+    # Find existing Excel file in session dir
+    excel_files = [f for f in os.listdir(session_dir) if f.endswith(('.xlsx', '.xls'))]
+    if not excel_files:
+        raise HTTPException(400, "No Excel file found. Upload a file first.")
+    excel_path = os.path.join(session_dir, excel_files[0])
+
+    cmap = None
+    if column_map:
+        try:
+            cmap = json.loads(column_map)
+            cmap = {k: int(v) for k, v in cmap.items()}
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(400, "Invalid column_map JSON")
+
+    result = auto_assign_ma_com(excel_path, column_map=cmap)
+
+    # Store assignments in session for later use (download / apply)
+    update_session(
+        session_id,
+        assign_result_json={
+            "assignments": result.assignments,
+            "ma_summary": result.ma_summary,
+            "com_summary": result.com_summary,
+            "column_map": cmap or result.detected_mapping,
+        },
+    )
+
+    return {
+        "session_id": session_id,
+        "assignments_count": len(result.assignments),
+        "ma_summary": result.ma_summary,
+        "com_summary": result.com_summary,
+        "warnings": result.warnings,
+        "assignments_preview": result.assignments[:20],
+    }
+
+
+@app.post("/api/download-assigned-excel")
+async def download_assigned_excel_endpoint(
+    session_id: str = Form(...),
+    user: dict = Depends(get_current_user),
+):
+    """Download an Excel file with MA & COM columns filled in."""
+    session = _require_session(session_id)
+    session_dir = get_session_dir(session_id)
+
+    assign_data = session.get("assign_result_json")
+    if not assign_data or not assign_data.get("assignments"):
+        raise HTTPException(400, "No auto-assign results found. Run auto-assign first.")
+
+    excel_files = [f for f in os.listdir(session_dir) if f.endswith(('.xlsx', '.xls'))]
+    if not excel_files:
+        raise HTTPException(400, "No Excel file found.")
+    excel_path = os.path.join(session_dir, excel_files[0])
+
+    output_path = export_assigned_excel(excel_path, assign_data["assignments"])
+
+    with open(output_path, "rb") as f:
+        file_bytes = f.read()
+    os.remove(output_path)
+
+    original_name = session.get("excel_filename", "order.xlsx")
+    base, ext = os.path.splitext(original_name)
+    download_name = f"{base}_with_MA_COM{ext}"
+
+    return StreamingResponse(
+        BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+    )
+
+
+@app.post("/api/apply-assignments")
+async def apply_assignments_endpoint(
+    session_id: str = Form(...),
+    column_map: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Apply auto-assigned MA/COM and parse into combos (combines auto-assign + parse-excel)."""
+    session = _require_session(session_id)
+    session_dir = get_session_dir(session_id)
+
+    assign_data = session.get("assign_result_json")
+    if not assign_data or not assign_data.get("assignments"):
+        raise HTTPException(400, "No auto-assign results found. Run auto-assign first.")
+
+    excel_files = [f for f in os.listdir(session_dir) if f.endswith(('.xlsx', '.xls'))]
+    if not excel_files:
+        raise HTTPException(400, "No Excel file found.")
+    excel_path = os.path.join(session_dir, excel_files[0])
+
+    # Write assigned Excel, then parse it using the standard column map
+    assigned_path = export_assigned_excel(excel_path, assign_data["assignments"])
+
+    # Parse column_map for the standard 6-field mapping if provided
+    cmap = None
+    if column_map:
+        try:
+            cmap = json.loads(column_map)
+            cmap = {k: int(v) for k, v in cmap.items()}
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(400, "Invalid column_map JSON")
+
+    result = parse_excel(assigned_path, column_map=cmap)
+    os.remove(assigned_path)
+
+    if not result.entries:
+        update_session(session_id, entries_json=[], groups_json=[], combos_json=[])
+        return {"session_id": session_id, "entries_count": 0, "groups": [], "combos": [], "warnings": result.warnings}
+
+    groups = group_entries(result.entries)
+    combos = generate_all_combos(result.entries)
+
+    entries_data = _entries_to_json(result.entries)
+    groups_data = _build_groups_response(result.entries, combos, groups)
+    combos_data = _combos_to_json(combos)
+
+    update_session(
+        session_id,
+        entries_json=entries_data,
+        groups_json=groups_data,
+        combos_json=combos_data,
+    )
+
+    return {
+        "session_id": session_id,
+        "entries_count": len(result.entries),
+        "total_slots": sum(e.quantity for e in result.entries),
+        "groups": groups_data,
+        "combo_count": len(combos),
+        "warnings": result.warnings,
+        "entries_preview": entries_data,
+    }
 
 
 # ---------------------------------------------------------------------------

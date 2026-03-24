@@ -63,9 +63,16 @@ def init_db() -> sqlite3.Connection:
             gap_mm           REAL DEFAULT 3.0,
             column_gap_mm    REAL DEFAULT 5.0,
             exported         INTEGER DEFAULT 0,
-            exported_at      TEXT
+            exported_at      TEXT,
+            assign_result_json TEXT
         )
     """)
+    # Migrate: add assign_result_json column if it doesn't exist (for existing DBs)
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN assign_result_json TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     return conn
 
@@ -87,6 +94,9 @@ def _row_to_dict(row: Optional[sqlite3.Row]) -> Optional[dict]:
     for key in ("entries_json", "groups_json", "combos_json", "dst_programs_json"):
         raw = d.get(key)
         d[key] = json.loads(raw) if raw else []
+    # Deserialise assign_result_json as dict (not list)
+    raw_assign = d.get("assign_result_json")
+    d["assign_result_json"] = json.loads(raw_assign) if raw_assign else None
     d["exported"] = bool(d.get("exported", 0))
     return d
 
@@ -140,7 +150,7 @@ def update_session(sid: str, **kwargs) -> Optional[Dict]:
         return get_session(sid)
 
     # Auto-serialise JSON fields
-    json_fields = {"entries_json", "groups_json", "combos_json", "dst_programs_json"}
+    json_fields = {"entries_json", "groups_json", "combos_json", "dst_programs_json", "assign_result_json"}
     for key in json_fields:
         if key in kwargs and not isinstance(kwargs[key], str):
             kwargs[key] = json.dumps(kwargs[key])

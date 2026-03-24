@@ -18,6 +18,7 @@ interface ParseResponse { session_id: string; entries_count: number; total_slots
 interface DetectResponse { session_id: string; excel_filename: string; headers: string[]; preview_rows: (string | number | null)[][]; detected_mapping: Record<string, number>; confidence: string; }
 const FIELD_KEYS = ["program", "name_line1", "name_line2", "quantity", "com_no", "machine_program"] as const;
 const REQUIRED_FIELDS = ["program", "name_line1", "quantity", "com_no", "machine_program"] as const;
+const ASSIGN_FIELD_KEYS = ["size", "fabric_colour", "frame_colour", "embroidery_colour"] as const;
 interface DstResponse { session_id: string; uploaded_count: number; needed_count: number; missing_programs: number[]; all_matched: boolean; }
 interface SessionSummary { session_id: string; name: string; created_at: string; updated_at: string; has_excel: boolean; entries_count: number; combo_count: number; dst_count: number; exported: boolean; }
 interface FullSession {
@@ -36,6 +37,13 @@ const FIELD_COLORS: Record<string, { bg: string; text: string; border: string; c
   quantity:        { bg: "rgba(168,85,247,0.13)",  text: "#a855f7", border: "rgba(168,85,247,0.4)",  cell: "rgba(168,85,247,0.06)",  glow: "rgba(168,85,247,0.2)"  },
   com_no:          { bg: "rgba(249,115,22,0.13)",  text: "#f97316", border: "rgba(249,115,22,0.4)",  cell: "rgba(249,115,22,0.06)",  glow: "rgba(249,115,22,0.2)"  },
   machine_program: { bg: "rgba(239,68,68,0.13)",   text: "#ef4444", border: "rgba(239,68,68,0.4)",   cell: "rgba(239,68,68,0.06)",   glow: "rgba(239,68,68,0.2)"   },
+};
+
+const ASSIGN_FIELD_COLORS: Record<string, { bg: string; text: string; border: string; cell: string; glow: string }> = {
+  size:              { bg: "rgba(245,158,11,0.13)",  text: "#f59e0b", border: "rgba(245,158,11,0.4)",  cell: "rgba(245,158,11,0.06)",  glow: "rgba(245,158,11,0.2)"  },
+  fabric_colour:     { bg: "rgba(59,130,246,0.13)",  text: "#3b82f6", border: "rgba(59,130,246,0.4)",  cell: "rgba(59,130,246,0.06)",  glow: "rgba(59,130,246,0.2)"  },
+  frame_colour:      { bg: "rgba(168,85,247,0.13)",  text: "#a855f7", border: "rgba(168,85,247,0.4)",  cell: "rgba(168,85,247,0.06)",  glow: "rgba(168,85,247,0.2)"  },
+  embroidery_colour: { bg: "rgba(34,197,94,0.13)",   text: "#16a34a", border: "rgba(34,197,94,0.4)",   cell: "rgba(34,197,94,0.06)",   glow: "rgba(34,197,94,0.2)"   },
 };
 
 function useCountUp(target: number, duration = 600) {
@@ -87,13 +95,8 @@ function formatDate(iso: string): string {
   } catch { return iso; }
 }
 
-// Visual 3-step stepper
-function StepIndicator({ step1Done, step2Done, step3Done, labels }: { step1Done: boolean; step2Done: boolean; step3Done: boolean; labels: string[] }) {
-  const steps = [
-    { done: step1Done, active: !step1Done },
-    { done: step2Done, active: step1Done && !step2Done },
-    { done: step3Done, active: step2Done && !step3Done },
-  ];
+// Visual step stepper
+function StepIndicator({ steps, labels }: { steps: {done: boolean; active: boolean}[]; labels: string[] }) {
   return (
     <div className="flex items-center justify-center py-1" style={{ animation: "fadeIn 0.5s ease 0.1s forwards", opacity: 0 }}>
       {steps.map((s, i) => (
@@ -205,6 +208,15 @@ export default function EmbroideryStacker() {
   // New: interactive column assignment
   const [activeField, setActiveField] = useState<string | null>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
+  // Auto-assign MA/COM state
+  const [assignMode, setAssignMode] = useState<"pending" | "detect" | "result" | "skipped">("pending");
+  const [assignDetectData, setAssignDetectData] = useState<{headers: string[]; preview_rows: (string|number|null)[][]; detected_mapping: Record<string, number>; confidence: string} | null>(null);
+  const [assignColumnMapping, setAssignColumnMapping] = useState<Record<string, number>>({});
+  const [assignActiveField, setAssignActiveField] = useState<string | null>(null);
+  const [assignResult, setAssignResult] = useState<{assignments_count: number; ma_summary: {ma: string; size: string; count: number}[]; com_summary: {ma: string; com: number; fabric_colour: string; frame_colour: string; embroidery_colour: string; count: number}[]; warnings: string[]} | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignDownloading, setAssignDownloading] = useState(false);
+  const assignExcelInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
@@ -302,6 +314,7 @@ export default function EmbroideryStacker() {
     setSelectedCombos(new Set()); setExpandedGroups(new Set());
     setPreviewCombo(null); setDownloadUrl(""); setExportProgress(0);
     setShowExcelPreview(false); setExported(false); setActiveField(null);
+    setAssignMode("pending"); setAssignDetectData(null); setAssignColumnMapping({}); setAssignResult(null); setAssignActiveField(null);
   }, []);
 
   const applyParseData = useCallback((data: ParseResponse) => {
@@ -417,6 +430,93 @@ export default function EmbroideryStacker() {
     } catch (e) { showToast(`${t("err.excel_read")}: ${e instanceof Error ? e.message : t("err.connection")}`); setExcelFile(""); }
     setExcelLoading(false);
   }, [sessionId, resetSession, showToast, sessionName, saveSessionName, fetchSessions, t]);
+
+  const uploadAssignExcel = useCallback(async (file: File) => {
+    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.excel_format")); return; }
+    setAssignLoading(true); setAssignResult(null); setExcelFile(file.name);
+    const form = new FormData(); form.append("file", file);
+    if (sessionId) form.append("session_id", sessionId);
+    try {
+      const res = await authFetch(`${API}/api/detect-assign-columns`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
+      const data = await res.json();
+      setAssignDetectData(data);
+      setAssignColumnMapping(data.detected_mapping);
+      setSessionId(data.session_id);
+      saveSessionName(data.session_id, sessionName);
+      setAssignMode("detect");
+    } catch (e) { showToast(`${t("err.excel_read")}: ${e instanceof Error ? e.message : t("err.connection")}`); setExcelFile(""); }
+    setAssignLoading(false);
+  }, [sessionId, showToast, sessionName, saveSessionName, t]);
+
+  const runAutoAssign = useCallback(async () => {
+    if (!sessionId) return;
+    setAssignLoading(true);
+    const form = new FormData();
+    form.append("session_id", sessionId);
+    form.append("column_map", JSON.stringify(assignColumnMapping));
+    try {
+      const res = await authFetch(`${API}/api/auto-assign`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
+      const data = await res.json();
+      setAssignResult(data);
+      setAssignMode("result");
+      if (data.warnings?.length) showToast(`${data.warnings.length} ${t("ok.warnings")}`, "warning");
+    } catch (e) { showToast(`${t("err.parse_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
+    setAssignLoading(false);
+  }, [sessionId, assignColumnMapping, showToast, t]);
+
+  const downloadAssignedExcel = useCallback(async () => {
+    if (!sessionId) return;
+    setAssignDownloading(true);
+    try {
+      const form = new FormData(); form.append("session_id", sessionId);
+      const res = await authFetch(`${API}/api/download-assigned-excel`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url;
+      const disposition = res.headers.get("Content-Disposition");
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] || "order_with_MA_COM.xlsx";
+      a.download = filename; a.click(); URL.revokeObjectURL(url);
+    } catch (e) { showToast(`${t("err.export_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
+    setAssignDownloading(false);
+  }, [sessionId, showToast, t]);
+
+  const proceedFromAssign = useCallback(async () => {
+    if (!sessionId) return;
+    setAssignLoading(true);
+    try {
+      const form = new FormData();
+      form.append("session_id", sessionId);
+      const res = await authFetch(`${API}/api/apply-assignments`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
+      const data = await res.json();
+      if (data.entries_count === 0) { showToast(t("err.no_entries"), "warning"); }
+      else {
+        setMappingConfirmed(true);
+        setAssignMode("skipped");
+        applyParseData(data);
+      }
+    } catch (e) { showToast(`${t("err.parse_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
+    setAssignLoading(false);
+  }, [sessionId, applyParseData, showToast, t]);
+
+  const handleAssignColumnClick = useCallback((colIdx: number) => {
+    if (assignActiveField) {
+      const cleaned = { ...assignColumnMapping };
+      Object.entries(cleaned).forEach(([field, idx]) => {
+        if (idx === colIdx && field !== assignActiveField) cleaned[field] = -1;
+      });
+      if (cleaned[assignActiveField] === colIdx) { cleaned[assignActiveField] = -1; }
+      else { cleaned[assignActiveField] = colIdx; }
+      setAssignColumnMapping(cleaned);
+      setAssignActiveField(null);
+    } else {
+      const ownerField = Object.entries(assignColumnMapping).find(([, idx]) => idx === colIdx)?.[0];
+      if (ownerField) setAssignActiveField(ownerField);
+    }
+  }, [assignActiveField, assignColumnMapping]);
 
   const confirmMapping = useCallback(async () => {
     if (!sessionId || !detectData) return;
@@ -698,6 +798,7 @@ export default function EmbroideryStacker() {
   }
 
   /* ── Main Workflow ── */
+  const step0Done = assignMode === "skipped" || assignMode === "result";
   const step1Done = !!excelFile && mappingConfirmed;
   const step2Done = dstUploaded;
   const step3Done = exported;
@@ -782,14 +883,242 @@ export default function EmbroideryStacker() {
         <div style={{ animation: "slideUp 0.4s ease" }}>
           <h1 className="text-2xl font-medium tracking-tight mb-3" style={{ letterSpacing: "-0.02em" }}>{t("cb.title")}</h1>
           <StepIndicator
-            step1Done={step1Done}
-            step2Done={step2Done}
-            step3Done={step3Done}
-            labels={[t("cb.step.upload_order"), t("cb.step.upload_programs"), t("cb.step.export")]}
+            steps={[
+              { done: step0Done, active: !step0Done },
+              { done: step1Done, active: step0Done && !step1Done },
+              { done: step2Done, active: step1Done && !step2Done },
+              { done: step3Done, active: step2Done && !step3Done },
+            ]}
+            labels={[t("cb.step.generate_ma_com"), t("cb.step.upload_order"), t("cb.step.upload_programs"), t("cb.step.export")]}
           />
         </div>
 
+        {/* ── Step 0: Auto-assign MA & COM ── */}
+        {assignMode !== "skipped" && !mappingConfirmed && (
+          <div className="glass-panel overflow-hidden" style={{ animation: "fadeSlideIn 0.35s ease" }}>
+            {/* Header */}
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+              <div>
+                <h3 className="text-sm font-medium">{t("cb.assign.title")}</h3>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>
+                  {assignMode === "pending" ? t("cb.assign.subtitle") : assignActiveField ? `→ ${t("cb.mapping.click_column")} (${t(`cb.assign.field.${assignActiveField}`)})` : t("cb.assign.detect_desc")}
+                </p>
+              </div>
+              <button onClick={() => { setAssignMode("skipped"); }} className="glass-btn text-[10px]">{t("cb.assign.skip")}</button>
+            </div>
+
+            {/* Upload zone for assign step */}
+            {assignMode === "pending" && (
+              <div className="p-5">
+                <div
+                  className={`drop-zone ${excelFile ? "has-file" : ""}`}
+                  onClick={() => assignExcelInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setExcelDragOver(true); }}
+                  onDragLeave={() => setExcelDragOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setExcelDragOver(false); const file = e.dataTransfer.files[0]; if (file) uploadAssignExcel(file); }}
+                >
+                  <input ref={assignExcelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadAssignExcel(e.target.files[0]); e.target.value = ""; }} />
+                  {assignLoading ? (
+                    <ExcelSkeleton label={t("cb.excel.parsing")} />
+                  ) : (
+                    <div>
+                      <svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                      <p className="text-sm font-medium mb-0.5">{t("cb.excel.title")}</p>
+                      <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.assign.upload_hint")}</p>
+                    </div>
+                  )}
+                </div>
+                {/* How it works */}
+                <div className="mt-4 p-3 rounded-lg text-[11px]" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                  <p className="font-medium mb-1.5" style={{ color: "var(--foreground)" }}>{t("cb.assign.how_title")}</p>
+                  <ul className="flex flex-col gap-1" style={{ color: "var(--muted)" }}>
+                    <li>• {t("cb.assign.how_ma")}</li>
+                    <li>• {t("cb.assign.how_com")}</li>
+                    <li>• {t("cb.assign.how_restart")}</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Column picker for assign */}
+            {assignMode === "detect" && assignDetectData && (
+              <div className="p-5">
+                {/* Field cards */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {ASSIGN_FIELD_KEYS.map((field) => {
+                    const fc = ASSIGN_FIELD_COLORS[field];
+                    const colIdx = assignColumnMapping[field];
+                    const isActive = assignActiveField === field;
+                    const headerName = colIdx >= 0 && colIdx < assignDetectData.headers.length ? assignDetectData.headers[colIdx] : null;
+                    return (
+                      <button
+                        key={field}
+                        onClick={() => setAssignActiveField(isActive ? null : field)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium transition-all"
+                        style={{
+                          background: isActive ? fc.bg : colIdx >= 0 ? fc.cell : "var(--surface)",
+                          border: `1.5px solid ${isActive ? fc.text : colIdx >= 0 ? fc.border : "var(--border)"}`,
+                          color: colIdx >= 0 ? fc.text : "var(--muted)",
+                          boxShadow: isActive ? `0 0 8px ${fc.glow}` : "none",
+                        }}
+                      >
+                        <span>{t(`cb.assign.field.${field}`)}</span>
+                        {headerName && <span className="text-[9px] opacity-70">({String.fromCharCode(65 + colIdx)}: {headerName})</span>}
+                        {colIdx < 0 && <span className="text-[9px]">?</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Spreadsheet preview */}
+                <div className="overflow-x-auto custom-scroll rounded-lg mb-4" style={{ border: "1px solid var(--border)" }}>
+                  <table className="text-[10px] border-collapse w-full" style={{ fontFamily: "var(--font-geist-mono)", minWidth: `${Math.max(assignDetectData.headers.length * 80, 400)}px` }}>
+                    <thead>
+                      <tr>
+                        {assignDetectData.headers.map((header, colIdx) => {
+                          const assignedField = Object.entries(assignColumnMapping).find(([, idx]) => idx === colIdx)?.[0];
+                          const fc = assignedField ? ASSIGN_FIELD_COLORS[assignedField] : null;
+                          return (
+                            <th
+                              key={colIdx}
+                              onClick={() => handleAssignColumnClick(colIdx)}
+                              style={{
+                                padding: "8px 10px", textAlign: "center",
+                                background: fc ? fc.bg : assignActiveField ? "var(--surface-hover)" : "var(--surface)",
+                                borderRight: "1px solid var(--border)",
+                                borderBottom: `3px solid ${fc ? fc.text : "transparent"}`,
+                                color: fc ? fc.text : "var(--muted)",
+                                cursor: assignActiveField ? "crosshair" : assignedField ? "pointer" : "default",
+                                minWidth: "80px",
+                              }}
+                            >
+                              <div className="font-bold text-[11px]">{String.fromCharCode(65 + colIdx)}</div>
+                              {header && <div className="text-[8px] opacity-70 mt-0.5 truncate max-w-[70px]">{header}</div>}
+                              {assignedField && fc && (
+                                <div className="text-[7px] mt-1 font-sans font-medium uppercase tracking-wider" style={{ color: fc.text }}>
+                                  {t(`cb.assign.field.${assignedField}`)}
+                                </div>
+                              )}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignDetectData.preview_rows.slice(0, 4).map((row, rowIdx) => (
+                        <tr key={rowIdx}>
+                          {assignDetectData.headers.map((_, colIdx) => {
+                            const assignedField = Object.entries(assignColumnMapping).find(([, idx]) => idx === colIdx)?.[0];
+                            const fc = assignedField ? ASSIGN_FIELD_COLORS[assignedField] : null;
+                            const val = colIdx < row.length ? row[colIdx] : null;
+                            return (
+                              <td key={colIdx} onClick={() => handleAssignColumnClick(colIdx)} style={{
+                                padding: "5px 10px", textAlign: "center",
+                                background: fc ? fc.cell : "transparent",
+                                borderRight: "1px solid var(--border)",
+                                borderBottom: rowIdx < 3 ? "1px solid var(--border)" : "none",
+                                cursor: assignActiveField ? "crosshair" : "default",
+                                color: fc ? fc.text : "var(--foreground)",
+                              }}>
+                                {val !== null ? String(val) : ""}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Generate button */}
+                <button
+                  className="accent-btn w-full"
+                  onClick={runAutoAssign}
+                  disabled={assignLoading || !ASSIGN_FIELD_KEYS.every(f => assignColumnMapping[f] >= 0)}
+                >
+                  {assignLoading ? t("cb.assign.generating") : t("cb.assign.generate_btn")}
+                </button>
+              </div>
+            )}
+
+            {/* Results */}
+            {assignMode === "result" && assignResult && (
+              <div className="p-5">
+                <h4 className="text-sm font-medium mb-3">{t("cb.assign.result_title")}</h4>
+
+                {/* Summary stats */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="stat-card"><div className="stat-number">{assignResult.ma_summary.length}</div><div className="stat-label">{t("cb.assign.ma_groups")}</div></div>
+                  <div className="stat-card"><div className="stat-number">{assignResult.com_summary.length}</div><div className="stat-label">{t("cb.assign.com_groups")}</div></div>
+                  <div className="stat-card"><div className="stat-number">{assignResult.assignments_count}</div><div className="stat-label">{t("cb.assign.total_rows")}</div></div>
+                </div>
+
+                {/* MA Summary table */}
+                <div className="overflow-x-auto custom-scroll rounded-lg mb-4" style={{ border: "1px solid var(--border)" }}>
+                  <table className="text-[11px] border-collapse w-full">
+                    <thead>
+                      <tr style={{ background: "var(--surface)" }}>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.ma_label")}</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.field.size")}</th>
+                        <th className="px-3 py-2 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.entries")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignResult.ma_summary.map((ma) => (
+                        <tr key={ma.ma}>
+                          <td className="px-3 py-2 font-medium" style={{ color: "#f59e0b", borderBottom: "1px solid var(--border)" }}>{ma.ma}</td>
+                          <td className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>{ma.size}</td>
+                          <td className="px-3 py-2 text-right" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>{ma.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* COM Summary table */}
+                <div className="overflow-x-auto custom-scroll rounded-lg mb-4" style={{ border: "1px solid var(--border)", maxHeight: "200px", overflowY: "auto" }}>
+                  <table className="text-[11px] border-collapse w-full">
+                    <thead>
+                      <tr style={{ background: "var(--surface)", position: "sticky", top: 0 }}>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.ma_label")}</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.com_label")}</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.fabric_col")}</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.frame_col")}</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.embroidery_col")}</th>
+                        <th className="px-3 py-2 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.entries")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignResult.com_summary.map((c, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 font-medium" style={{ color: "#f59e0b", borderBottom: "1px solid var(--border)" }}>{c.ma}</td>
+                          <td className="px-3 py-1.5 font-medium" style={{ color: "var(--accent)", borderBottom: "1px solid var(--border)" }}>{c.com}</td>
+                          <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>{c.fabric_colour}</td>
+                          <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>{c.frame_colour}</td>
+                          <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>{c.embroidery_colour}</td>
+                          <td className="px-3 py-1.5 text-right" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>{c.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button className="glass-btn flex-1 text-[11px] py-2.5" onClick={downloadAssignedExcel} disabled={assignDownloading}>
+                    {assignDownloading ? t("cb.assign.downloading") : t("cb.assign.download_excel")}
+                  </button>
+                  <button className="accent-btn flex-1" onClick={proceedFromAssign} disabled={assignLoading}>
+                    {assignLoading ? t("cb.assign.generating") : t("cb.assign.proceed")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Upload Zones */}
+        {(assignMode === "skipped" || mappingConfirmed) && (<>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ animation: "slideUp 0.4s ease 0.05s forwards", opacity: 0 }}>
           {/* Excel drop zone */}
           <div
@@ -1139,6 +1468,7 @@ export default function EmbroideryStacker() {
             </div>
           </div>
         )}
+        </>)}
 
         {/* Excel Preview (collapsible) */}
         {parseData?.entries_preview && parseData.entries_preview.length > 0 && (

@@ -10,6 +10,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from copy import copy
+
 from openpyxl import load_workbook
 
 # Default column indices (A=0, F=5, G=6, H=7, O=14, P=15)
@@ -30,6 +32,22 @@ HEADER_PATTERNS = {
     "quantity": ["quantity", "qty", "amount", "count", "pcs"],
     "com_no": ["com no", "combo no", "combo number", "combo", "com"],
     "machine_program": ["machine program", "machine prog", "machine"],
+}
+
+# Header patterns for auto-assign columns (size, fabric, frame, embroidery)
+ASSIGN_HEADER_PATTERNS = {
+    "size": ["size", "sz"],
+    "fabric_colour": ["fabric color", "fabric colour", "fabric col", "fabric"],
+    "frame_colour": ["frame color", "frame colour", "frame col", "frame"],
+    "embroidery_colour": ["name/embroidery", "embroidery color", "embroidery colour", "embroidery col", "embroidery"],
+}
+
+# Default column indices for auto-assign (I=8, J=9, K=10, M=12)
+DEFAULT_ASSIGN_COLUMN_MAP = {
+    "size": 12,
+    "fabric_colour": 8,
+    "frame_colour": 9,
+    "embroidery_colour": 10,
 }
 
 # Fields where "M" alone is a valid header (special case — too short for fuzzy match)
@@ -293,3 +311,218 @@ def generate_all_combos(entries: List[NameEntry], max_slots: int = 20) -> List[C
     for group in groups:
         all_combos.extend(expand_and_split(group, max_slots))
     return all_combos
+
+
+# ---------------------------------------------------------------------------
+# Auto-assign MA & COM
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AutoAssignResult:
+    """Result of auto-assigning MA and COM numbers."""
+    headers: List[str]
+    preview_rows: List[List]
+    detected_mapping: Dict[str, int]  # size, fabric_colour, frame_colour, embroidery_colour
+    confidence: str
+    assignments: List[Dict]  # per-row: {row_num, size, fabric, frame, embroidery, ma, com}
+    ma_summary: List[Dict]   # {ma, size, count}
+    com_summary: List[Dict]  # {ma, com, fabric, frame, embroidery, count}
+    warnings: List[str] = field(default_factory=list)
+
+
+def detect_assign_columns(path: str, preview_count: int = 5) -> AutoAssignResult:
+    """Read Excel headers and auto-detect columns for MA/COM assignment.
+
+    Detects: size, fabric_colour, frame_colour, embroidery_colour.
+    Returns headers, preview rows, detected mapping, and empty assignments
+    (call auto_assign_ma_com to populate assignments).
+    """
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        return AutoAssignResult([], [], dict(DEFAULT_ASSIGN_COLUMN_MAP), "low", [], [], [])
+
+    raw_headers = list(rows[0])
+    headers = [str(h or "").strip() for h in raw_headers]
+    headers_lower = [h.lower() for h in headers]
+
+    preview_rows = []
+    for row in rows[1:preview_count + 1]:
+        preview_rows.append([_cell_to_json(c) for c in row])
+
+    # Auto-detect mapping
+    mapping: Dict[str, int] = {}
+    used_indices: set = set()
+
+    for field_name, patterns in ASSIGN_HEADER_PATTERNS.items():
+        for pattern in patterns:
+            for i, h in enumerate(headers_lower):
+                if i in used_indices:
+                    continue
+                if pattern == h or (len(pattern) > 2 and pattern in h):
+                    mapping[field_name] = i
+                    used_indices.add(i)
+                    break
+            if field_name in mapping:
+                break
+
+    matched = len(mapping)
+    for f in DEFAULT_ASSIGN_COLUMN_MAP:
+        if f not in mapping:
+            mapping[f] = DEFAULT_ASSIGN_COLUMN_MAP[f]
+
+    confidence = "high" if matched >= 3 else ("low" if matched < 2 else "medium")
+
+    return AutoAssignResult(
+        headers=headers,
+        preview_rows=preview_rows,
+        detected_mapping=mapping,
+        confidence=confidence,
+        assignments=[],
+        ma_summary=[],
+        com_summary=[],
+    )
+
+
+def auto_assign_ma_com(
+    path: str,
+    column_map: Optional[Dict[str, int]] = None,
+) -> AutoAssignResult:
+    """Auto-assign MA and COM numbers based on size and colour columns.
+
+    MA: unique per size value (ordered by first appearance) → "MA1", "MA2", ...
+    COM: unique per (fabric_colour, frame_colour, embroidery_colour) within each MA,
+         sequential starting at 1 per MA group.
+    """
+    cmap = column_map or DEFAULT_ASSIGN_COLUMN_MAP
+    idx_size = cmap["size"]
+    idx_fabric = cmap["fabric_colour"]
+    idx_frame = cmap["frame_colour"]
+    idx_embroidery = cmap["embroidery_colour"]
+    max_idx = max(idx_size, idx_fabric, idx_frame, idx_embroidery)
+
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        return AutoAssignResult([], [], cmap, "low", [], [], [])
+
+    raw_headers = list(rows[0])
+    headers = [str(h or "").strip() for h in raw_headers]
+    preview_rows = []
+    for row in rows[1:6]:
+        preview_rows.append([_cell_to_json(c) for c in row])
+
+    # --- Assignment algorithm ---
+    size_to_ma: Dict[str, str] = {}
+    ma_counter = 1
+    com_tracker: Dict[str, Dict[Tuple, int]] = {}  # ma -> {(fabric, frame, embroidery): com_no}
+
+    assignments = []
+    warnings = []
+
+    for row_num, row in enumerate(rows[1:], start=2):
+        if len(row) <= max_idx:
+            continue
+
+        size_val = str(row[idx_size] or "").strip()
+        fabric_val = str(row[idx_fabric] or "").strip()
+        frame_val = str(row[idx_frame] or "").strip()
+        embroidery_val = str(row[idx_embroidery] or "").strip()
+
+        if not size_val:
+            warnings.append(f"Row {row_num}: missing size value, skipped")
+            continue
+
+        # Assign MA
+        if size_val not in size_to_ma:
+            size_to_ma[size_val] = f"MA{ma_counter}"
+            ma_counter += 1
+        ma = size_to_ma[size_val]
+
+        # Assign COM
+        if ma not in com_tracker:
+            com_tracker[ma] = {}
+        colour_key = (fabric_val, frame_val, embroidery_val)
+        if colour_key not in com_tracker[ma]:
+            com_tracker[ma][colour_key] = len(com_tracker[ma]) + 1
+        com = com_tracker[ma][colour_key]
+
+        assignments.append({
+            "row_num": row_num,
+            "size": size_val,
+            "fabric_colour": fabric_val,
+            "frame_colour": frame_val,
+            "embroidery_colour": embroidery_val,
+            "assigned_ma": ma,
+            "assigned_com": com,
+        })
+
+    # Build summaries
+    ma_counts: Dict[str, int] = defaultdict(int)
+    for a in assignments:
+        ma_counts[a["assigned_ma"]] += 1
+
+    ma_summary = []
+    for size_val, ma in size_to_ma.items():
+        ma_summary.append({"ma": ma, "size": size_val, "count": ma_counts[ma]})
+
+    com_summary = []
+    for ma, colour_dict in com_tracker.items():
+        for (fabric, frame, embroidery), com_no in colour_dict.items():
+            count = sum(1 for a in assignments if a["assigned_ma"] == ma and a["assigned_com"] == com_no)
+            com_summary.append({
+                "ma": ma,
+                "com": com_no,
+                "fabric_colour": fabric,
+                "frame_colour": frame,
+                "embroidery_colour": embroidery,
+                "count": count,
+            })
+
+    return AutoAssignResult(
+        headers=headers,
+        preview_rows=preview_rows,
+        detected_mapping=cmap,
+        confidence="high" if len(assignments) > 0 else "low",
+        assignments=assignments,
+        ma_summary=ma_summary,
+        com_summary=com_summary,
+        warnings=warnings,
+    )
+
+
+def export_assigned_excel(
+    original_path: str,
+    assignments: List[Dict],
+    com_col: int = 14,   # Column O
+    ma_col: int = 15,    # Column P
+) -> str:
+    """Write a copy of the Excel with MA and COM columns filled in.
+
+    Returns the path to the new file.
+    """
+    from openpyxl import load_workbook as _load_wb
+    import os
+
+    wb = _load_wb(original_path)
+    ws = wb.active
+
+    # Build lookup: row_num -> (ma, com)
+    row_lookup = {a["row_num"]: (a["assigned_ma"], a["assigned_com"]) for a in assignments}
+
+    for row_num, (ma, com) in row_lookup.items():
+        ws.cell(row=row_num, column=ma_col + 1, value=ma)   # openpyxl is 1-indexed
+        ws.cell(row=row_num, column=com_col + 1, value=com)
+
+    # Save to new file
+    base, ext = os.path.splitext(original_path)
+    output_path = f"{base}_assigned{ext}"
+    wb.save(output_path)
+    wb.close()
+    return output_path
