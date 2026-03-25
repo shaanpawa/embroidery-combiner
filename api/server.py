@@ -880,11 +880,15 @@ async def version_endpoint():
             latest = data.get("tag_name", "").lstrip("v")
             html_url = data.get("html_url", "")
             # Find the installer asset (.exe) for desktop auto-update
+            # Prefer MicroAutomation_Setup over legacy EmbroideryC.exe
             installer_url = None
             for asset in data.get("assets", []):
-                if asset.get("name", "").endswith(".exe"):
+                name = asset.get("name", "")
+                if name.startswith("MicroAutomation_Setup") and name.endswith(".exe"):
                     installer_url = asset.get("browser_download_url")
                     break
+                elif name.endswith(".exe") and not installer_url:
+                    installer_url = asset.get("browser_download_url")
             _version_cache = {
                 "latest": latest,
                 "update_url": html_url,
