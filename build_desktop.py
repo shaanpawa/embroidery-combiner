@@ -23,7 +23,7 @@ def run(cmd: list[str], cwd: str | None = None, env: dict | None = None):
     """Run a command and exit on failure."""
     print(f"\n>>> {' '.join(cmd)}")
     merged_env = {**os.environ, **(env or {})}
-    result = subprocess.run(cmd, cwd=cwd, env=merged_env)
+    result = subprocess.run(cmd, cwd=cwd, env=merged_env, shell=(sys.platform == "win32"))
     if result.returncode != 0:
         print(f"ERROR: Command failed with exit code {result.returncode}")
         sys.exit(1)
