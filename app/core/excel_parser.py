@@ -235,12 +235,28 @@ def parse_excel(path: str, column_map: Optional[Dict[str, int]] = None) -> Parse
             result.warnings.append(f"Row {row_num}: program '{program}' is not a number, skipped")
             continue
 
-        if qty is None or qty < 1:
-            if qty is not None and qty < 1:
-                result.warnings.append(f"Row {row_num}: qty={qty} treated as 1")
+        # Robust quantity parsing: handle text like "50 pcs", cap at 1000
+        if qty is None:
             qty = 1
         else:
-            qty = int(qty)
+            try:
+                qty = int(float(qty))  # handles "50.0" and plain numbers
+            except (ValueError, TypeError):
+                # Try extracting leading digits from text like "50 pcs"
+                import re as _re
+                m = _re.match(r'(\d+)', str(qty).strip())
+                if m:
+                    result.warnings.append(f"Row {row_num}: qty '{qty}' → using {m.group(1)}")
+                    qty = int(m.group(1))
+                else:
+                    result.warnings.append(f"Row {row_num}: qty '{qty}' is not a number, using 1")
+                    qty = 1
+            if qty < 1:
+                result.warnings.append(f"Row {row_num}: qty={qty} treated as 1")
+                qty = 1
+            elif qty > 1000:
+                result.warnings.append(f"Row {row_num}: qty={qty} capped at 1000")
+                qty = 1000
 
         result.entries.append(NameEntry(
             program=program,
@@ -419,7 +435,8 @@ def auto_assign_ma_com(
         preview_rows.append([_cell_to_json(c) for c in row])
 
     # --- Assignment algorithm ---
-    size_to_ma: Dict[str, str] = {}
+    size_to_ma: Dict[str, str] = {}        # normalized_size → "MA1"
+    size_display: Dict[str, str] = {}      # normalized_size → first raw size seen
     ma_counter = 1
     com_tracker: Dict[str, Dict[Tuple, int]] = {}  # ma -> {(fabric, frame, embroidery): com_no}
 
@@ -430,18 +447,26 @@ def auto_assign_ma_com(
         if len(row) <= max_idx:
             continue
 
-        size_val = str(row[idx_size] or "").strip()
-        fabric_val = str(row[idx_fabric] or "").strip()
-        frame_val = str(row[idx_frame] or "").strip()
-        embroidery_val = str(row[idx_embroidery] or "").strip()
+        size_raw = str(row[idx_size] or "").strip()
+        fabric_raw = str(row[idx_fabric] or "").strip()
+        frame_raw = str(row[idx_frame] or "").strip()
+        embroidery_raw = str(row[idx_embroidery] or "").strip()
 
-        if not size_val:
+        if not size_raw:
             warnings.append(f"Row {row_num}: missing size value, skipped")
             continue
+
+        # Normalize for grouping (collapse whitespace, case-insensitive)
+        import re as _re
+        size_val = _re.sub(r'\s+', '', size_raw).lower()  # "110 x 35" → "110x35"
+        fabric_val = fabric_raw.strip().title()    # "white" / "WHITE" → "White"
+        frame_val = frame_raw.strip().title()
+        embroidery_val = embroidery_raw.strip().title()
 
         # Assign MA
         if size_val not in size_to_ma:
             size_to_ma[size_val] = f"MA{ma_counter}"
+            size_display[size_val] = size_raw  # Keep first seen raw value for display
             ma_counter += 1
         ma = size_to_ma[size_val]
 
@@ -455,8 +480,8 @@ def auto_assign_ma_com(
 
         assignments.append({
             "row_num": row_num,
-            "size": size_val,
-            "fabric_colour": fabric_val,
+            "size": size_raw,          # Display original value
+            "fabric_colour": fabric_val,  # Title-cased for display
             "frame_colour": frame_val,
             "embroidery_colour": embroidery_val,
             "assigned_ma": ma,
@@ -470,7 +495,7 @@ def auto_assign_ma_com(
 
     ma_summary = []
     for size_val, ma in size_to_ma.items():
-        ma_summary.append({"ma": ma, "size": size_val, "count": ma_counts[ma]})
+        ma_summary.append({"ma": ma, "size": size_display.get(size_val, size_val), "count": ma_counts[ma]})
 
     com_summary = []
     for ma, colour_dict in com_tracker.items():
@@ -500,25 +525,51 @@ def auto_assign_ma_com(
 def export_assigned_excel(
     original_path: str,
     assignments: List[Dict],
-    com_col: int = 14,   # Column O
-    ma_col: int = 15,    # Column P
+    com_col: int = None,
+    ma_col: int = None,
 ) -> str:
-    """Write a copy of the Excel with MA and COM columns filled in.
+    """Write a copy of the Excel with MA and COM columns appended after last used column.
 
+    If com_col/ma_col are not provided, auto-detects last used column and appends.
     Returns the path to the new file.
     """
     from openpyxl import load_workbook as _load_wb
+    from openpyxl.styles import Font
     import os
 
     wb = _load_wb(original_path)
     ws = wb.active
 
+    # Find last used column in header row (row 1) if not specified
+    if ma_col is None or com_col is None:
+        last_col = 0
+        for cell in ws[1]:
+            if cell.value is not None:
+                last_col = cell.column  # 1-indexed
+        ma_col_1 = last_col + 1   # 1-indexed for openpyxl
+        com_col_1 = last_col + 2
+    else:
+        ma_col_1 = ma_col + 1     # Convert 0-indexed to 1-indexed
+        com_col_1 = com_col + 1
+
+    # Write bold headers
+    bold = Font(bold=True)
+    ma_header = ws.cell(row=1, column=ma_col_1, value="MA")
+    ma_header.font = bold
+    com_header = ws.cell(row=1, column=com_col_1, value="COM")
+    com_header.font = bold
+
+    # Set reasonable column widths
+    from openpyxl.utils import get_column_letter
+    ws.column_dimensions[get_column_letter(ma_col_1)].width = 12
+    ws.column_dimensions[get_column_letter(com_col_1)].width = 10
+
     # Build lookup: row_num -> (ma, com)
     row_lookup = {a["row_num"]: (a["assigned_ma"], a["assigned_com"]) for a in assignments}
 
     for row_num, (ma, com) in row_lookup.items():
-        ws.cell(row=row_num, column=ma_col + 1, value=ma)   # openpyxl is 1-indexed
-        ws.cell(row=row_num, column=com_col + 1, value=com)
+        ws.cell(row=row_num, column=ma_col_1, value=str(ma))
+        ws.cell(row=row_num, column=com_col_1, value=com)
 
     # Save to new file
     base, ext = os.path.splitext(original_path)

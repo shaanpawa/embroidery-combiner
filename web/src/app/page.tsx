@@ -2,12 +2,30 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useState, useEffect } from "react";
 import { useTheme } from "./theme-provider";
 import { useLanguage } from "./i18n";
+
+const IS_LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
+const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 export default function Home() {
   const { theme, toggle } = useTheme();
   const { lang, toggle: toggleLang, t } = useLanguage();
+  const [version, setVersion] = useState("");
+  const [updateAvailable, setUpdateAvailable] = useState<{ latest: string; url: string } | null>(null);
+
+  useEffect(() => {
+    fetch(`${API}/api/version`)
+      .then(r => r.json())
+      .then(data => {
+        setVersion(data.version || "");
+        if (data.update_available && data.latest && data.update_url) {
+          setUpdateAvailable({ latest: data.latest, url: data.update_url });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 relative">
@@ -72,7 +90,23 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Footer removed — branding already in header */}
+      {/* Version footer */}
+      {version && (
+        <div className="mt-10 text-center" style={{ animation: "fadeIn 0.5s ease 0.5s forwards", opacity: 0 }}>
+          {updateAvailable ? (
+            <a href={updateAvailable.url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[10px] font-medium transition-all hover:scale-105"
+              style={{ background: "var(--accent)", color: "white" }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              {t("update.available")} — v{updateAvailable.latest}
+            </a>
+          ) : (
+            <span className="text-[10px]" style={{ color: "var(--border-strong)" }}>
+              v{version}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

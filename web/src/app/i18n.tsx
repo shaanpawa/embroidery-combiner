@@ -84,8 +84,14 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.assign.total_rows": { en: "Total Rows", th: "จำนวนแถวทั้งหมด" },
   "cb.assign.download_excel": { en: "Download Updated Excel", th: "ดาวน์โหลด Excel ที่อัปเดต" },
   "cb.assign.downloading": { en: "Downloading...", th: "กำลังดาวน์โหลด..." },
-  "cb.assign.proceed": { en: "Proceed to Combo Builder →", th: "ดำเนินการต่อ Combo Builder →" },
-  "cb.assign.skip": { en: "Skip — I already have MA & COM", th: "ข้าม — ฉันมี MA & COM แล้ว" },
+  "cb.assign.proceed": { en: "Proceed to Embroidery Stacker →", th: "ดำเนินการต่อ Embroidery Stacker →" },
+  "cb.assign.skip": { en: "I already have MA & COM", th: "ฉันมี MA & COM แล้ว" },
+  "cb.assign.skip_desc": { en: "Upload Excel with MA & COM already filled in — go straight to the stacker", th: "อัปโหลด Excel ที่มี MA & COM แล้ว — ไปที่ stacker เลย" },
+  "cb.assign.generate_title": { en: "Generate MA & COM", th: "สร้าง MA & COM" },
+  "cb.assign.generate_desc": { en: "Upload order Excel — we auto-assign MA & COM numbers for you", th: "อัปโหลด Excel — ระบบจะสร้างเลข MA & COM อัตโนมัติ" },
+  "cb.assign.recommended": { en: "Recommended", th: "แนะนำ" },
+  "cb.assign.legend_ma": { en: "MA = grouped by Size", th: "MA = จัดกลุ่มตามไซส์" },
+  "cb.assign.legend_com": { en: "COM = grouped by Fabric + Frame + Embroidery colour", th: "COM = จัดกลุ่มตามสีผ้า + สีเฟรม + สีปัก" },
   "cb.assign.how_title": { en: "How MA & COM are assigned", th: "วิธีสร้าง MA & COM" },
   "cb.assign.how_ma": { en: "MA: Each unique size gets a unique MA number (MA1, MA2, ...)", th: "MA: แต่ละไซส์ที่ไม่ซ้ำกันจะได้เลข MA ไม่ซ้ำ (MA1, MA2, ...)" },
   "cb.assign.how_com": { en: "COM: Within each MA, rows with the same fabric + frame + embroidery colours get the same COM number", th: "COM: ภายในแต่ละ MA แถวที่มีสีผ้า + สีเฟรม + สีปักเดียวกันจะได้เลข COM เดียวกัน" },
@@ -220,6 +226,9 @@ const translations: Record<string, Record<Lang, string>> = {
   "err.delete_fail": { en: "Delete failed", th: "ลบไม่สำเร็จ" },
   "err.remove_excel_fail": { en: "Failed to remove Excel", th: "ลบข้อมูล Excel ไม่สำเร็จ" },
   "err.api_not_running": { en: "API not running on port 8000", th: "API ไม่ทำงานบนพอร์ต 8000" },
+  "err.file_too_large": { en: "File too large (max 10MB)", th: "ไฟล์ใหญ่เกินไป (สูงสุด 10MB)" },
+  "err.invalid_excel": { en: "Please upload a valid Excel file (.xlsx or .xls)", th: "กรุณาอัปโหลดไฟล์ Excel ที่ถูกต้อง (.xlsx หรือ .xls)" },
+  "err.remove_excel_confirm": { en: "Click again to confirm removal", th: "คลิกอีกครั้งเพื่อยืนยันการลบ" },
 
   // Success messages
   "ok.session_deleted": { en: "Session deleted", th: "ลบเซสชันแล้ว" },
@@ -227,6 +236,8 @@ const translations: Record<string, Record<Lang, string>> = {
   "ok.warnings": { en: "warning(s) during parsing", th: "คำเตือนระหว่างอ่านข้อมูล" },
 
   // Session picker extras
+  "cb.session.expires": { en: "left", th: "เหลือ" },
+  "cb.session.expiring": { en: "Expiring soon", th: "ใกล้หมดอายุ" },
   "cb.session.no_sessions": { en: "No sessions yet", th: "ยังไม่มีเซสชัน" },
   "cb.session.delete_confirm": { en: "Click again to confirm", th: "คลิกอีกครั้งเพื่อยืนยัน" },
   "cb.session.delete_confirm_label": { en: "✕ Delete?", th: "✕ ลบ?" },
@@ -258,6 +269,30 @@ const translations: Record<string, Record<Lang, string>> = {
   "files": { en: "files", th: "ไฟล์" },
   "of": { en: "of", th: "จาก" },
   "slots": { en: "slots", th: "ช่อง" },
+
+  // Guided tour
+  "tour.step1.title": { en: "Upload Order Excel", th: "อัปโหลด Excel ออเดอร์" },
+  "tour.step1.desc": { en: "Start by uploading your order spreadsheet. The system will auto-assign MA & COM numbers, or you can skip if you already have them.", th: "เริ่มจากอัปโหลดสเปรดชีตออเดอร์ ระบบจะกำหนดเลข MA & COM อัตโนมัติ หรือข้ามได้ถ้ามีอยู่แล้ว" },
+  "tour.step2.title": { en: "Map Your Columns", th: "แมปคอลัมน์ของคุณ" },
+  "tour.step2.desc": { en: "We auto-detect which columns contain program numbers, names, quantities, and more. Just verify and confirm.", th: "ระบบตรวจจับอัตโนมัติว่าคอลัมน์ไหนมีเลขโปรแกรม ชื่อ จำนวน และอื่นๆ แค่ตรวจสอบแล้วยืนยัน" },
+  "tour.step3.title": { en: "Upload DST Programs", th: "อัปโหลดโปรแกรม DST" },
+  "tour.step3.desc": { en: "Upload your DST files as a zip. The system matches each program number to its file and warns you if any are missing.", th: "อัปโหลดไฟล์ DST เป็น zip ระบบจับคู่เลขโปรแกรมกับไฟล์และเตือนถ้ามีไฟล์หาย" },
+  "tour.step4.title": { en: "Export Combo Files", th: "ส่งออกไฟล์คอมโบ" },
+  "tour.step4.desc": { en: "Review your combos, then export production-ready DST files as a zip. Load them straight into the machine.", th: "ตรวจสอบคอมโบ แล้วส่งออกไฟล์ DST พร้อมผลิตเป็น zip โหลดเข้าเครื่องได้เลย" },
+  "tour.next": { en: "Next", th: "ถัดไป" },
+  "tour.skip": { en: "Skip tour", th: "ข้ามทัวร์" },
+  "tour.done": { en: "Get started", th: "เริ่มเลย" },
+  "tour.help": { en: "Help", th: "ช่วยเหลือ" },
+
+  // Updates
+  "update.available": { en: "New version available", th: "มีเวอร์ชันใหม่" },
+  "update.download": { en: "Download Update", th: "ดาวน์โหลดอัปเดต" },
+  "update.installing": { en: "Installing...", th: "กำลังติดตั้ง..." },
+  "update.check": { en: "Check for updates", th: "ตรวจสอบอัปเดต" },
+  "update.checking": { en: "Checking...", th: "กำลังตรวจสอบ..." },
+  "update.latest": { en: "You're on the latest version", th: "คุณใช้เวอร์ชันล่าสุดแล้ว" },
+  "update.no_internet": { en: "Could not check for updates", th: "ไม่สามารถตรวจสอบอัปเดตได้" },
+  "update.version": { en: "Version", th: "เวอร์ชัน" },
 };
 
 const I18nCtx = createContext<I18nContext>({

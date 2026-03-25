@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Micro Automation — Download</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 2px 24px rgba(0,0,0,0.08); max-width: 480px; width: 100%; padding: 48px 40px; text-align: center; }
+    .logo { font-size: 14px; letter-spacing: -0.03em; color: #999; margin-bottom: 32px; }
+    h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.03em; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 32px; }
+    .version { font-size: 13px; color: #999; margin-bottom: 8px; }
+    .download-btn { display: inline-flex; align-items: center; gap: 10px; background: #4a5bb8; color: #fff; font-size: 16px; font-weight: 600; padding: 14px 36px; border-radius: 10px; text-decoration: none; transition: background 0.2s; margin-bottom: 16px; }
+    .download-btn:hover { background: #3a4ba8; }
+    .download-btn svg { width: 20px; height: 20px; }
+    .no-release { color: #999; font-size: 14px; padding: 14px 36px; }
+    .instructions { text-align: left; margin-top: 32px; padding-top: 24px; border-top: 1px solid #eee; }
+    .instructions h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+    .instructions ol { padding-left: 20px; font-size: 13px; color: #555; line-height: 2; }
+    .instructions li { margin-bottom: 2px; }
+    .footer { margin-top: 24px; font-size: 11px; color: #bbb; }
+    .loading { color: #999; font-size: 14px; }
+    .badge { display: inline-block; background: #e8f5e9; color: #2e7d32; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">Micro Automation <span style="color: #ccc">by</span> Ossia</div>
+    <h1>Download</h1>
+    <p class="subtitle">Embroidery combo builder for Windows</p>
+
+    <div id="release-info">
+      <p class="loading">Checking for latest version...</p>
+    </div>
+
+    <div class="instructions">
+      <h2>How to install</h2>
+      <ol>
+        <li>Click <strong>Download</strong> above</li>
+        <li>Open the downloaded <code>.exe</code> file</li>
+        <li>Follow the installer steps (click Next, Next, Install)</li>
+        <li>The app will open automatically when done</li>
+      </ol>
+      <h2 style="margin-top: 16px;">How to update</h2>
+      <ol>
+        <li>Download the new version from this page</li>
+        <li>Run the installer — it replaces the old version automatically</li>
+        <li>Your data is kept safe</li>
+      </ol>
+    </div>
+
+    <p class="footer">Windows 10+ required</p>
+  </div>
+
+  <script>
+    const REPO = 'shaanpawa/embroidery-combiner';
+    const container = document.getElementById('release-info');
+
+    fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+      .then(r => {
+        if (!r.ok) throw new Error('No releases');
+        return r.json();
+      })
+      .then(data => {
+        const version = data.tag_name || '';
+        const exe = (data.assets || []).find(a => a.name.endsWith('.exe'));
+        const date = new Date(data.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        if (exe) {
+          container.innerHTML = `
+            <div class="badge">Latest: ${version}</div><br>
+            <a href="${exe.browser_download_url}" class="download-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download ${version}
+            </a>
+            <p class="version">Released ${date}</p>
+          `;
+        } else {
+          container.innerHTML = `<p class="no-release">Release ${version} found but no installer attached.</p>`;
+        }
+      })
+      .catch(() => {
+        container.innerHTML = `<p class="no-release">No releases yet. Check back soon.</p>`;
+      });
+  </script>
+</body>
+</html>

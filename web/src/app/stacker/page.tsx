@@ -3,7 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession as _useSession, signOut } from "next-auth/react";
+
+const IS_LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
+// In local mode, skip useSession (no auth)
+const useSession = IS_LOCAL_MODE ? () => ({ data: null }) as ReturnType<typeof _useSession> : _useSession;
 import { useTheme } from "../theme-provider";
 import { useLanguage } from "../i18n";
 import { authFetch, clearAuthToken, warmupBackend } from "@/lib/api";
@@ -20,7 +24,7 @@ const FIELD_KEYS = ["program", "name_line1", "name_line2", "quantity", "com_no",
 const REQUIRED_FIELDS = ["program", "name_line1", "quantity", "com_no", "machine_program"] as const;
 const ASSIGN_FIELD_KEYS = ["size", "fabric_colour", "frame_colour", "embroidery_colour"] as const;
 interface DstResponse { session_id: string; uploaded_count: number; needed_count: number; missing_programs: number[]; all_matched: boolean; }
-interface SessionSummary { session_id: string; name: string; created_at: string; updated_at: string; has_excel: boolean; entries_count: number; combo_count: number; dst_count: number; exported: boolean; }
+interface SessionSummary { session_id: string; name: string; created_at: string; updated_at: string; expires_at: string | null; has_excel: boolean; entries_count: number; combo_count: number; dst_count: number; exported: boolean; }
 interface FullSession {
   session_id: string; name: string; entries_count: number; total_slots: number;
   groups: Group[]; combo_count: number; entries_preview?: EntryPreview[];
@@ -93,6 +97,19 @@ function formatDate(iso: string): string {
     const d = new Date(iso);
     return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   } catch { return iso; }
+}
+
+function getTimeRemaining(expiresAt: string | null): { text: string; color: string; urgency: "ok" | "warn" | "danger" } | null {
+  if (!expiresAt) return null;
+  try {
+    const now = Date.now();
+    const expires = new Date(expiresAt).getTime();
+    const hoursLeft = (expires - now) / (1000 * 60 * 60);
+    if (hoursLeft <= 0) return { text: "Expired", color: "var(--danger)", urgency: "danger" };
+    if (hoursLeft < 2) return { text: `${Math.ceil(hoursLeft * 60)}m left`, color: "var(--danger)", urgency: "danger" };
+    if (hoursLeft < 12) return { text: `${Math.round(hoursLeft)}h left`, color: "var(--warning)", urgency: "warn" };
+    return { text: `${Math.round(hoursLeft)}h left`, color: "var(--muted)", urgency: "ok" };
+  } catch { return null; }
 }
 
 // Visual step stepper
@@ -177,6 +194,7 @@ export default function EmbroideryStacker() {
   const [savedSessions, setSavedSessions] = useState<SessionSummary[]>([]);
   const [showSessionDropdown, setShowSessionDropdown] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [removeExcelConfirm, setRemoveExcelConfirm] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
 
   const [excelFile, setExcelFile] = useState("");
@@ -216,12 +234,54 @@ export default function EmbroideryStacker() {
   const [assignResult, setAssignResult] = useState<{assignments_count: number; ma_summary: {ma: string; size: string; count: number}[]; com_summary: {ma: string; com: number; fabric_colour: string; frame_colour: string; embroidery_colour: string; count: number}[]; warnings: string[]} | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignDownloading, setAssignDownloading] = useState(false);
-  const [backendStatus, setBackendStatus] = useState<"connecting" | "ready" | "failed">("connecting");
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "ready" | "failed">(IS_LOCAL_MODE ? "ready" : "connecting");
+  const [updateInfo, setUpdateInfo] = useState<{ latest: string; update_url: string; installer_url?: string } | null>(null);
+  const [currentVersion, setCurrentVersion] = useState("1.0.0");
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "downloading" | "installing" | "up-to-date" | "error">("idle");
+  const [tourStep, setTourStep] = useState(-1); // -1 = hidden
   const assignExcelInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = useCallback((message: string, type: "error" | "warning" | "success" = "error") => setToast({ message, type }), []);
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdateChecking(true);
+    setUpdateStatus("idle");
+    try {
+      const res = await fetch(`${API}/api/version`);
+      const data = await res.json();
+      if (data.version) setCurrentVersion(data.version);
+      if (data.update_available && data.latest && data.update_url) {
+        setUpdateInfo({ latest: data.latest, update_url: data.update_url, installer_url: data.installer_url });
+        setUpdateDismissed(false);
+        localStorage.removeItem("update-dismissed");
+      } else {
+        setUpdateStatus("up-to-date");
+        setTimeout(() => setUpdateStatus("idle"), 3000);
+      }
+    } catch {
+      setUpdateStatus("error");
+      setTimeout(() => setUpdateStatus("idle"), 3000);
+    } finally {
+      setUpdateChecking(false);
+    }
+  }, []);
+
+  const handleDesktopUpdate = useCallback(async () => {
+    setUpdateStatus("downloading");
+    try {
+      const dlRes = await fetch(`${API}/api/update/download`);
+      if (!dlRes.ok) throw new Error("Download failed");
+      setUpdateStatus("installing");
+      await fetch(`${API}/api/update/install`, { method: "POST" });
+    } catch {
+      setUpdateStatus("error");
+      setTimeout(() => setUpdateStatus("idle"), 3000);
+    }
+  }, []);
 
   // Auto-expand "how it works" when confidence is low
   useEffect(() => {
@@ -304,7 +364,24 @@ export default function EmbroideryStacker() {
 
   useEffect(() => {
     fetchSessions();
-    warmupBackend(API, setBackendStatus);
+    if (!IS_LOCAL_MODE) warmupBackend(API, setBackendStatus);
+
+    // Show guided tour on first visit
+    if (!localStorage.getItem("tour-completed")) {
+      setTourStep(0);
+    }
+
+    // Check for app updates (non-blocking)
+    const dismissed = localStorage.getItem("update-dismissed");
+    if (dismissed && Date.now() - parseInt(dismissed) < 24 * 60 * 60 * 1000) {
+      setUpdateDismissed(true);
+    } else {
+      fetch(`${API}/api/version`).then(r => r.json()).then(data => {
+        if (data.update_available && data.latest && data.update_url) {
+          setUpdateInfo({ latest: data.latest, update_url: data.update_url, installer_url: data.installer_url });
+        }
+      }).catch(() => {/* no internet or endpoint not ready — skip */});
+    }
   }, [fetchSessions]);
 
   // Clean up session when user leaves the page
@@ -428,7 +505,9 @@ export default function EmbroideryStacker() {
   }, [sessionId, showToast, fetchSessions, t]);
 
   const uploadExcel = useCallback(async (file: File) => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.excel_format")); return; }
+    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
+    if (file.size > 10 * 1024 * 1024) { showToast(t("err.file_too_large")); return; }
+    if (excelLoading) return; // prevent double upload
     resetSession();
     setSessionId("");
     setExcelLoading(true); setExcelFile(file.name);
@@ -447,7 +526,9 @@ export default function EmbroideryStacker() {
   }, [sessionId, resetSession, showToast, sessionName, saveSessionName, fetchSessions, t]);
 
   const uploadAssignExcel = useCallback(async (file: File) => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.excel_format")); return; }
+    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
+    if (file.size > 10 * 1024 * 1024) { showToast(t("err.file_too_large")); return; }
+    if (assignLoading) return; // prevent double upload
     setAssignLoading(true); setAssignResult(null); setExcelFile(file.name);
     const form = new FormData(); form.append("file", file);
     if (sessionId) form.append("session_id", sessionId);
@@ -706,12 +787,39 @@ export default function EmbroideryStacker() {
     </div>
   ) : null;
 
+  const updateBanner = updateInfo && !updateDismissed ? (
+    <div className="w-full flex items-center justify-center gap-3 text-[11px] py-2.5 px-4" style={{ background: "linear-gradient(135deg, var(--accent), #4a5bb8)", color: "white" }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span className="font-medium">{t("update.available")} — v{updateInfo.latest}</span>
+      {IS_LOCAL_MODE && updateInfo.installer_url ? (
+        <button
+          onClick={handleDesktopUpdate}
+          disabled={updateStatus === "downloading" || updateStatus === "installing"}
+          className="px-3 py-0.5 rounded-full text-[10px] font-semibold transition-all"
+          style={{ background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)" }}
+        >
+          {updateStatus === "downloading" ? "⏳ Downloading..." : updateStatus === "installing" ? t("update.installing") : t("update.download")}
+        </button>
+      ) : (
+        <a href={updateInfo.update_url} target="_blank" rel="noopener noreferrer"
+          className="px-3 py-0.5 rounded-full text-[10px] font-semibold transition-all"
+          style={{ background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)" }}>
+          {t("update.download")}
+        </a>
+      )}
+      <button onClick={() => { setUpdateDismissed(true); localStorage.setItem("update-dismissed", String(Date.now())); }}
+        className="ml-1 w-5 h-5 rounded-full flex items-center justify-center transition-all"
+        style={{ background: "rgba(255,255,255,0.15)" }}>✕</button>
+    </div>
+  ) : null;
+
   /* ── Session Picker Screen ── */
   if (!sessionStarted) {
     return (
       <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         {connectingBanner}
+        {updateBanner}
 
         {/* Nav */}
         <nav className="flex items-center gap-4 px-6 py-3.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -762,6 +870,7 @@ export default function EmbroideryStacker() {
                 <div className="flex flex-col gap-2">
                   {savedSessions.map((s) => {
                     const dotColor = s.exported ? "var(--success)" : s.has_excel ? "var(--accent)" : "var(--border-strong)";
+                    const timer = getTimeRemaining(s.expires_at);
                     return (
                       <div
                         key={s.session_id}
@@ -782,6 +891,7 @@ export default function EmbroideryStacker() {
                             <span className="text-[10px]" style={{ color: "var(--muted)" }}>{formatDate(s.created_at)}</span>
                             {s.entries_count > 0 && <span className="text-[10px]" style={{ color: "var(--muted)" }}>{s.entries_count} {t("names")}</span>}
                             {s.combo_count > 0 && <span className="text-[10px]" style={{ color: "var(--muted)" }}>{s.combo_count} {t("combos")}</span>}
+                            {timer && <span className="text-[10px]" style={{ color: timer.color }}>⏱ {timer.text}</span>}
                           </div>
                         </div>
                         {/* Delete button */}
@@ -823,6 +933,32 @@ export default function EmbroideryStacker() {
             )}
           </div>
         </div>
+
+        {/* Guided Tour Overlay (session picker) */}
+        {tourStep >= 0 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
+            <div className="glass-panel p-6 mx-4" style={{ maxWidth: "420px", width: "100%", animation: "fadeSlideIn 0.3s ease" }}>
+              <div className="flex items-center gap-1.5 mb-4">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="h-1 rounded-full flex-1 transition-all" style={{ background: i <= tourStep ? "var(--accent)" : "var(--border)" }} />
+                ))}
+              </div>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: "var(--accent)", color: "white" }}>
+                <span className="text-lg font-bold">{tourStep + 1}</span>
+              </div>
+              <h3 className="text-base font-semibold mb-1.5">{t(`tour.step${tourStep + 1}.title`)}</h3>
+              <p className="text-[13px] leading-relaxed mb-6" style={{ color: "var(--muted)" }}>{t(`tour.step${tourStep + 1}.desc`)}</p>
+              <div className="flex items-center justify-between">
+                <button className="text-[12px] px-3 py-1.5 rounded-lg transition-colors" style={{ color: "var(--muted)" }}
+                  onClick={() => { setTourStep(-1); localStorage.setItem("tour-completed", "1"); }}>{t("tour.skip")}</button>
+                <button className="accent-btn !py-2 !px-5 !text-[13px] !min-h-0"
+                  onClick={() => { if (tourStep < 3) setTourStep(tourStep + 1); else { setTourStep(-1); localStorage.setItem("tour-completed", "1"); } }}>
+                  {tourStep < 3 ? t("tour.next") : t("tour.done")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -837,6 +973,7 @@ export default function EmbroideryStacker() {
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       {connectingBanner}
+      {updateBanner}
 
       {/* Nav */}
       <nav className="flex items-center gap-4 px-6 py-3.5 shrink-0" style={{ borderBottom: "1px solid var(--border)", animation: "fadeIn 0.3s ease" }}>
@@ -888,18 +1025,33 @@ export default function EmbroideryStacker() {
                     {t("cb.session.new")}
                   </button>
                 </div>
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: "4px", paddingTop: "4px" }}>
+                  <button
+                    className="w-full text-left px-3.5 py-2 text-[11px] transition-colors hover:bg-[var(--surface-hover)] flex items-center gap-2"
+                    style={{ color: "var(--muted)" }}
+                    disabled={updateChecking}
+                    onClick={() => { checkForUpdates(); }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    {updateChecking ? t("update.checking") : updateStatus === "up-to-date" ? `✓ ${t("update.latest")}` : updateStatus === "error" ? t("update.no_internet") : t("update.check")}
+                  </button>
+                  <div className="px-3.5 py-1.5 text-[9px]" style={{ color: "var(--border-strong)" }}>
+                    {t("update.version")} {currentVersion}
+                  </div>
+                </div>
               </div>
             </>
           )}
         </div>
         <div className="flex-1" />
-        {session?.user && (
+        {!IS_LOCAL_MODE && session?.user && (
           <button onClick={() => { clearAuthToken(); signOut({ callbackUrl: "/login" }); }} className="nav-btn" title={session.user.email || ""}>
             <span className="hidden sm:inline text-[10px]">{session.user.name || "O"}</span>
             <span className="sm:hidden text-[10px]">{(session.user.name || "O").charAt(0).toUpperCase()}</span>
             <span className="text-[9px]" style={{ opacity: 0.6 }}>{t("nav.signout")}</span>
           </button>
         )}
+        <button onClick={() => setTourStep(0)} className="nav-btn" title={t("tour.help")}>?</button>
         <button onClick={toggleLang} className="nav-btn">{lang === "en" ? "TH" : "EN"}</button>
         <button onClick={toggle} className="theme-toggle">{theme === "light" ? "☾" : "☀"}</button>
         <div className="hidden sm:flex items-center gap-1.5">
@@ -935,30 +1087,63 @@ export default function EmbroideryStacker() {
                   {assignMode === "pending" ? t("cb.assign.subtitle") : assignActiveField ? `→ ${t("cb.mapping.click_column")} (${t(`cb.assign.field.${assignActiveField}`)})` : t("cb.assign.detect_desc")}
                 </p>
               </div>
-              <button onClick={() => { setAssignMode("skipped"); }} className="glass-btn text-[10px]">{t("cb.assign.skip")}</button>
+              {assignMode !== "pending" && (
+                <button onClick={() => { setAssignMode("skipped"); }} className="glass-btn text-[10px]">{t("cb.assign.skip")}</button>
+              )}
             </div>
 
-            {/* Upload zone for assign step */}
+            {/* Two-path upload: Generate MA/COM vs I already have MA/COM */}
             {assignMode === "pending" && (
               <div className="p-5">
-                <div
-                  className={`drop-zone ${excelFile ? "has-file" : ""}`}
-                  onClick={() => assignExcelInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setExcelDragOver(true); }}
-                  onDragLeave={() => setExcelDragOver(false)}
-                  onDrop={(e) => { e.preventDefault(); setExcelDragOver(false); const file = e.dataTransfer.files[0]; if (file) uploadAssignExcel(file); }}
-                >
-                  <input ref={assignExcelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadAssignExcel(e.target.files[0]); e.target.value = ""; }} />
-                  {assignLoading ? (
-                    <ExcelSkeleton label={t("cb.excel.parsing")} />
-                  ) : (
-                    <div>
-                      <svg className="mx-auto mb-2.5 mt-1.5 opacity-25" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
-                      <p className="text-sm font-medium mb-0.5">{t("cb.excel.title")}</p>
-                      <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.assign.upload_hint")}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Left card: Generate MA & COM (recommended) */}
+                  <div className="glass-panel p-4 flex flex-col" style={{ borderBottom: "2px solid var(--accent)" }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+                      <span className="text-sm font-medium">{t("cb.assign.generate_title")}</span>
                     </div>
-                  )}
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md mb-3 w-fit" style={{ background: "var(--accent)", color: "white" }}>{t("cb.assign.recommended")}</span>
+                    <p className="text-[11px] mb-4" style={{ color: "var(--muted)" }}>{t("cb.assign.generate_desc")}</p>
+                    <div className="flex-1" />
+                    <div
+                      className="drop-zone !py-5 !rounded-xl"
+                      onClick={() => assignExcelInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setExcelDragOver(true); }}
+                      onDragLeave={() => setExcelDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setExcelDragOver(false); const file = e.dataTransfer.files[0]; if (file) uploadAssignExcel(file); }}
+                    >
+                      <input ref={assignExcelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadAssignExcel(e.target.files[0]); e.target.value = ""; }} />
+                      {assignLoading ? (
+                        <ExcelSkeleton label={t("cb.excel.parsing")} />
+                      ) : (
+                        <div>
+                          <svg className="mx-auto mb-2 opacity-25" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 12 15 15" /></svg>
+                          <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.assign.upload_hint")}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right card: I already have MA & COM */}
+                  <div className="glass-panel p-4 flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <span className="text-sm font-medium">{t("cb.assign.skip")}</span>
+                    </div>
+                    <p className="text-[11px] mb-4 mt-2" style={{ color: "var(--muted)" }}>{t("cb.assign.skip_desc")}</p>
+                    <div className="flex-1" />
+                    <div
+                      className="drop-zone !py-5 !rounded-xl"
+                      onClick={() => { setAssignMode("skipped"); excelInputRef.current?.click(); }}
+                    >
+                      <div>
+                        <svg className="mx-auto mb-2 opacity-25" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 12 15 15" /></svg>
+                        <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.assign.upload_hint")}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+
                 {/* How it works */}
                 <div className="mt-4 p-3 rounded-lg text-[11px]" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                   <p className="font-medium mb-1.5" style={{ color: "var(--foreground)" }}>{t("cb.assign.how_title")}</p>
@@ -1072,7 +1257,7 @@ export default function EmbroideryStacker() {
               </div>
             )}
 
-            {/* Results */}
+            {/* Results — Grouped Card Layout */}
             {assignMode === "result" && assignResult && (
               <div className="p-5">
                 <h4 className="text-sm font-medium mb-3">{t("cb.assign.result_title")}</h4>
@@ -1084,59 +1269,68 @@ export default function EmbroideryStacker() {
                   <div className="stat-card"><div className="stat-number">{assignResult.assignments_count}</div><div className="stat-label">{t("cb.assign.total_rows")}</div></div>
                 </div>
 
-                {/* MA Summary table */}
-                <div className="overflow-x-auto custom-scroll rounded-lg mb-4" style={{ border: "1px solid var(--border)" }}>
-                  <table className="text-[11px] border-collapse w-full">
-                    <thead>
-                      <tr style={{ background: "var(--surface)" }}>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.ma_label")}</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.field.size")}</th>
-                        <th className="px-3 py-2 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.entries")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assignResult.ma_summary.map((ma) => (
-                        <tr key={ma.ma}>
-                          <td className="px-3 py-2 font-medium" style={{ color: "#f59e0b", borderBottom: "1px solid var(--border)" }}>{ma.ma}</td>
-                          <td className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>{ma.size}</td>
-                          <td className="px-3 py-2 text-right" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>{ma.count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {/* Legend */}
+                <div className="flex flex-wrap gap-4 mb-4 text-[10px] px-1" style={{ color: "var(--muted)" }}>
+                  <span><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#f59e0b" }} />{t("cb.assign.legend_ma")}</span>
+                  <span><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "var(--accent)" }} />{t("cb.assign.legend_com")}</span>
                 </div>
 
-                {/* COM Summary table */}
-                <div className="overflow-x-auto custom-scroll rounded-lg mb-4" style={{ border: "1px solid var(--border)", maxHeight: "200px", overflowY: "auto" }}>
-                  <table className="text-[11px] border-collapse w-full">
-                    <thead>
-                      <tr style={{ background: "var(--surface)", position: "sticky", top: 0 }}>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.ma_label")}</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.com_label")}</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.fabric_col")}</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.frame_col")}</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.embroidery_col")}</th>
-                        <th className="px-3 py-2 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>{t("cb.assign.entries")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assignResult.com_summary.map((c, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-1.5 font-medium" style={{ color: "#f59e0b", borderBottom: "1px solid var(--border)" }}>{c.ma}</td>
-                          <td className="px-3 py-1.5 font-medium" style={{ color: "var(--accent)", borderBottom: "1px solid var(--border)" }}>{c.com}</td>
-                          <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>{c.fabric_colour}</td>
-                          <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>{c.frame_colour}</td>
-                          <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>{c.embroidery_colour}</td>
-                          <td className="px-3 py-1.5 text-right" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>{c.count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {/* Grouped MA → COM cards */}
+                <div className="flex flex-col gap-3 mb-4">
+                  {assignResult.ma_summary.map((ma) => {
+                    const comRows = assignResult.com_summary.filter(c => c.ma === ma.ma);
+                    return (
+                      <div key={ma.ma} className="glass-panel overflow-hidden">
+                        {/* MA Header */}
+                        <div className="px-4 py-3 flex items-center gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>{ma.ma}</span>
+                          <span className="text-[12px] font-medium">{ma.size}</span>
+                          <div className="flex-1" />
+                          <span className="text-[10px]" style={{ color: "var(--muted)" }}>{ma.count} {t("cb.assign.entries")}</span>
+                        </div>
+                        {/* COM Table */}
+                        <div className="overflow-x-auto">
+                          <table className="text-[11px] border-collapse w-full">
+                            <thead>
+                              <tr style={{ background: "var(--surface)" }}>
+                                <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", width: "50px" }}>{t("cb.assign.com_label")}</th>
+                                <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", background: "rgba(59,130,246,0.04)" }}>{t("cb.assign.fabric_col")}</th>
+                                <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", background: "rgba(168,85,247,0.04)" }}>{t("cb.assign.frame_col")}</th>
+                                <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", background: "rgba(34,197,94,0.04)" }}>{t("cb.assign.embroidery_col")}</th>
+                                <th className="px-3 py-1.5 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", width: "60px" }}>{t("cb.assign.entries")}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {comRows.map((c, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-medium" style={{ color: "var(--accent)", borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none" }}>
+                                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px]" style={{ background: "rgba(38,57,122,0.1)" }}>{c.com}</span>
+                                  </td>
+                                  <td className="px-3 py-1.5" style={{ borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(59,130,246,0.03)" }}>{c.fabric_colour}</td>
+                                  <td className="px-3 py-1.5" style={{ borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(168,85,247,0.03)" }}>{c.frame_colour}</td>
+                                  <td className="px-3 py-1.5" style={{ borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(34,197,94,0.03)" }}>{c.embroidery_colour}</td>
+                                  <td className="px-3 py-1.5 text-right" style={{ color: "var(--muted)", borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none" }}>{c.count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Action buttons */}
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <button className="glass-btn flex-1 text-[11px] py-2.5" onClick={downloadAssignedExcel} disabled={assignDownloading}>
+                  <button
+                    className="flex-1 text-[11px] py-2.5 rounded-[10px] font-medium transition-all flex items-center justify-center gap-2"
+                    style={{ border: "1.5px solid var(--accent)", color: "var(--accent)", background: "transparent" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(38,57,122,0.06)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    onClick={downloadAssignedExcel}
+                    disabled={assignDownloading}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     {assignDownloading ? t("cb.assign.downloading") : t("cb.assign.download_excel")}
                   </button>
                   <button className="accent-btn flex-1" onClick={proceedFromAssign} disabled={assignLoading}>
@@ -1168,11 +1362,23 @@ export default function EmbroideryStacker() {
                   <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>
                   <span className="text-sm font-medium" style={{ color: "var(--accent)" }}>{excelFile}</span>
                   <button
-                    className="w-5 h-5 flex items-center justify-center rounded-md text-[10px] transition-colors"
-                    style={{ color: "var(--muted)", background: "var(--surface)" }}
-                    onClick={(e) => { e.stopPropagation(); removeExcel(); }}
-                    title={t("cb.excel.remove")}
-                  >✕</button>
+                    className="flex items-center justify-center rounded-md text-[10px] transition-all"
+                    style={{
+                      color: removeExcelConfirm ? "white" : "var(--muted)",
+                      background: removeExcelConfirm ? "var(--danger)" : "var(--surface)",
+                      minWidth: removeExcelConfirm ? "80px" : "20px",
+                      height: "20px",
+                      padding: removeExcelConfirm ? "0 6px" : "0",
+                      fontSize: removeExcelConfirm ? "9px" : "10px",
+                      fontWeight: removeExcelConfirm ? 500 : 400,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (removeExcelConfirm) { removeExcel(); setRemoveExcelConfirm(false); }
+                      else { setRemoveExcelConfirm(true); setTimeout(() => setRemoveExcelConfirm(false), 3000); }
+                    }}
+                    title={removeExcelConfirm ? t("err.remove_excel_confirm") : t("cb.excel.remove")}
+                  >{removeExcelConfirm ? t("cb.session.delete_confirm_label") : "✕"}</button>
                 </div>
               </div>
             ) : (
@@ -1757,11 +1963,64 @@ export default function EmbroideryStacker() {
                 <p className="text-[11px]" style={{ color: "var(--success)" }}>✓ {t("cb.export.previous")}</p>
               )}
               {!exporting && !downloadUrl && !exported && !dstUploaded && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{t("cb.export.need_dst")}</p>}
+              {dstData && dstData.missing_programs.length > 0 && !exporting && (
+                <div className="mt-2 px-3 py-2 rounded-lg text-[11px] flex items-center gap-2" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "var(--warning)" }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span>{dstData.missing_programs.length} DST file{dstData.missing_programs.length !== 1 ? "s" : ""} missing: {dstData.missing_programs.slice(0, 8).join(", ")}{dstData.missing_programs.length > 8 ? " ..." : ""}</span>
+                </div>
+              )}
             </div>
             <div className="flex flex-col items-stretch sm:items-end gap-1">
               <span className="text-[9px] font-medium uppercase tracking-wider text-center sm:text-right" style={{ color: "var(--accent)", opacity: 0.5 }}>03</span>
               <button className="accent-btn w-full sm:w-auto" disabled={selectedCombos.size === 0 || !dstUploaded || exporting} onClick={handleExport}>
                 {exporting ? t("cb.export.exporting") : `${t("cb.export.btn")} ${selectedCombos.size} ${selectedCombos.size !== 1 ? t("cb.export.files") : t("cb.export.file")}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guided Tour Overlay */}
+      {tourStep >= 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
+          <div className="glass-panel p-6 mx-4" style={{ maxWidth: "420px", width: "100%", animation: "fadeSlideIn 0.3s ease" }}>
+            {/* Step indicator */}
+            <div className="flex items-center gap-1.5 mb-4">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="h-1 rounded-full flex-1 transition-all" style={{ background: i <= tourStep ? "var(--accent)" : "var(--border)" }} />
+              ))}
+            </div>
+
+            {/* Step icon */}
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: "var(--accent)", color: "white" }}>
+              <span className="text-lg font-bold">{tourStep + 1}</span>
+            </div>
+
+            {/* Step content */}
+            <h3 className="text-base font-semibold mb-1.5">
+              {t(`tour.step${tourStep + 1}.title`)}
+            </h3>
+            <p className="text-[13px] leading-relaxed mb-6" style={{ color: "var(--muted)" }}>
+              {t(`tour.step${tourStep + 1}.desc`)}
+            </p>
+
+            {/* Buttons */}
+            <div className="flex items-center justify-between">
+              <button
+                className="text-[12px] px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: "var(--muted)" }}
+                onClick={() => { setTourStep(-1); localStorage.setItem("tour-completed", "1"); }}
+              >
+                {t("tour.skip")}
+              </button>
+              <button
+                className="accent-btn !py-2 !px-5 !text-[13px] !min-h-0"
+                onClick={() => {
+                  if (tourStep < 3) { setTourStep(tourStep + 1); }
+                  else { setTourStep(-1); localStorage.setItem("tour-completed", "1"); }
+                }}
+              >
+                {tourStep < 3 ? t("tour.next") : t("tour.done")}
               </button>
             </div>
           </div>

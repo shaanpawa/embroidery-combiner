@@ -1,5 +1,5 @@
 """
-SQLite persistence layer for Micro Automation — Combo Builder.
+SQLite persistence layer for Micro Automation — Embroidery Stacker.
 Replaces the in-memory sessions dict in server.py.
 
 DB file: {project_root}/data/micro.db
@@ -10,7 +10,7 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 # ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ from typing import Dict, List, Optional
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DATA_DIR = os.environ.get("MICRO_DATA_DIR", os.path.join(PROJECT_ROOT, "data"))
 DB_PATH = os.path.join(DATA_DIR, "micro.db")
 SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
 
@@ -138,6 +138,14 @@ def get_session(sid: str) -> Optional[Dict]:
     return _row_to_dict(row)
 
 
+_ALLOWED_COLUMNS = {
+    "user_email", "name", "updated_at",
+    "excel_filename", "entries_json", "groups_json", "combos_json",
+    "dst_programs_json", "gap_mm", "column_gap_mm",
+    "exported", "exported_at", "assign_result_json",
+}
+
+
 def update_session(sid: str, **kwargs) -> Optional[Dict]:
     """
     Update arbitrary fields on a session.
@@ -148,6 +156,11 @@ def update_session(sid: str, **kwargs) -> Optional[Dict]:
     """
     if not kwargs:
         return get_session(sid)
+
+    # Validate column names against whitelist to prevent SQL injection
+    invalid_keys = set(kwargs.keys()) - _ALLOWED_COLUMNS
+    if invalid_keys:
+        raise ValueError(f"Invalid column names: {invalid_keys}")
 
     # Auto-serialise JSON fields
     json_fields = {"entries_json", "groups_json", "combos_json", "dst_programs_json", "assign_result_json"}
@@ -199,11 +212,19 @@ def list_sessions(user_email: Optional[str] = None) -> List[Dict]:
     result = []
     for row in rows:
         d = dict(row)
+        # Calculate expiry time (updated_at + 24 hours)
+        expires_at = None
+        try:
+            updated = datetime.fromisoformat(d["updated_at"])
+            expires_at = (updated + timedelta(hours=24)).isoformat()
+        except (ValueError, TypeError):
+            pass
         result.append({
             "id": d["id"],
             "name": d["name"],
             "created_at": d["created_at"],
             "updated_at": d["updated_at"],
+            "expires_at": expires_at,
             "has_excel": d.get("excel_filename") is not None,
             "entries_count": _json_len(d.get("entries_json")),
             "combo_count": _json_len(d.get("combos_json")),
@@ -248,7 +269,6 @@ def cleanup_old_sessions(max_age_hours: int = 24) -> int:
     Returns the number of sessions deleted.
     """
     import shutil
-    from datetime import timedelta
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
     db = get_db()

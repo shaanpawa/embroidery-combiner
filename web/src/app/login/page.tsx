@@ -1,13 +1,22 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
 import Image from "next/image";
 import { useLanguage } from "../i18n";
 import { useTheme } from "../theme-provider";
 
+const IS_LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
+
 function LoginContent() {
+  const router = useRouter();
+
+  // In local mode, skip login entirely
+  useEffect(() => {
+    if (IS_LOCAL_MODE) router.replace("/stacker");
+  }, [router]);
+  if (IS_LOCAL_MODE) return null;
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const callbackUrl = searchParams.get("callbackUrl") || "/";

@@ -5,8 +5,11 @@ Validates NextAuth JWT tokens and checks email whitelist.
 In development mode (AUTH_DISABLED=true), auth is bypassed.
 """
 
+import logging
 import os
 from fastapi import Depends, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 # Whitelist of allowed emails (comma-separated in env var)
 ALLOWED_EMAILS = set(
@@ -15,8 +18,8 @@ ALLOWED_EMAILS = set(
     if e.strip()
 )
 
-# In dev mode, skip auth entirely
-AUTH_DISABLED = os.environ.get("AUTH_DISABLED", "true").lower() == "true"
+# Secure by default: auth is ON unless explicitly disabled
+AUTH_DISABLED = os.environ.get("AUTH_DISABLED", "false").lower() == "true"
 
 
 async def get_current_user(request: Request) -> dict:
@@ -40,6 +43,7 @@ async def get_current_user(request: Request) -> dict:
                 request.cookies.get("__Secure-next-auth.session-token")
 
     if not token:
+        logger.warning("Unauthenticated request from %s to %s", request.client.host if request.client else "unknown", request.url.path)
         raise HTTPException(401, "Not authenticated")
 
     # Decode the NextAuth JWT
@@ -60,8 +64,10 @@ async def get_current_user(request: Request) -> dict:
             email = payload.get("email", "").lower()
             name = payload.get("name", "")
         except Exception:
+            logger.warning("Invalid JWT token from %s", request.client.host if request.client else "unknown")
             raise HTTPException(401, "Invalid token")
     except Exception:
+        logger.warning("Invalid JWT token from %s", request.client.host if request.client else "unknown")
         raise HTTPException(401, "Invalid token")
 
     if not email:
@@ -69,6 +75,7 @@ async def get_current_user(request: Request) -> dict:
 
     # Check whitelist (if configured)
     if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        logger.warning("Email %s not in whitelist, rejected from %s", email, request.url.path)
         raise HTTPException(403, f"Email {email} is not authorized")
 
     return {"email": email, "name": name}

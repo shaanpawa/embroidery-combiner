@@ -38,7 +38,7 @@ providers.push(
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
-  secret: process.env.NEXTAUTH_SECRET || "dev-secret-not-for-production",
+  secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
   },

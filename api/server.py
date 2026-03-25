@@ -1,12 +1,21 @@
 """
-FastAPI backend for Micro Automation — Combo Builder.
+FastAPI backend for Micro Automation — Embroidery Stacker.
 Handles Excel parsing, DST file uploads, and combo export.
 Sessions are persisted in SQLite via database.py.
 """
 
+# Load .env file if present (for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import asyncio
 import json
+import logging
 import os
+import secrets
 import shutil
 import uuid
 import zipfile
@@ -14,6 +23,8 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 import re
+
+logger = logging.getLogger(__name__)
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,8 +71,8 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 MAX_EXCEL_SIZE = 10 * 1024 * 1024       # 10 MB
 MAX_DST_SIZE = 5 * 1024 * 1024          # 5 MB per DST file
 MAX_ZIP_SIZE = 100 * 1024 * 1024        # 100 MB compressed
-MAX_ZIP_UNCOMPRESSED = 500 * 1024 * 1024 # 500 MB uncompressed
-MAX_ZIP_FILES = 1000                     # max files in zip
+MAX_ZIP_UNCOMPRESSED = 50 * 1024 * 1024  # 50 MB uncompressed (DST files are small)
+MAX_ZIP_FILES = 500                      # max files in zip
 
 
 def _safe_filename(name: str | None, fallback: str = "file") -> str:
@@ -94,8 +105,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -115,7 +126,7 @@ def _ensure_session(session_id: str = None, user_email: str = "local@dev") -> tu
         session = get_session(session_id)
         if session:
             return session_id, session
-    sid = session_id or str(uuid.uuid4())[:8]
+    sid = session_id or secrets.token_urlsafe(16)
     session = create_session(sid, sid, user_email)
     return sid, session
 
@@ -321,6 +332,7 @@ async def upload_dst_endpoint(
     if zip_file and zip_file.filename and zip_file.filename.lower().endswith(".zip"):
         content = await zip_file.read()
         if len(content) > MAX_ZIP_SIZE:
+            logger.warning("ZIP upload rejected: %d bytes exceeds %d limit", len(content), MAX_ZIP_SIZE)
             raise HTTPException(413, f"ZIP file too large (max {MAX_ZIP_SIZE // 1024 // 1024}MB)")
         with zipfile.ZipFile(BytesIO(content)) as zf:
             # Zip bomb protection: check uncompressed size and file count
@@ -331,6 +343,9 @@ async def upload_dst_endpoint(
             if total_uncompressed > MAX_ZIP_UNCOMPRESSED:
                 raise HTTPException(413, f"ZIP uncompressed size too large (max {MAX_ZIP_UNCOMPRESSED // 1024 // 1024}MB)")
             for name in zf.namelist():
+                # Reject nested ZIPs
+                if name.lower().endswith(".zip"):
+                    raise HTTPException(400, "Nested ZIP files are not allowed")
                 basename = os.path.basename(name)
                 if basename.lower().endswith(".dst") and not basename.startswith("."):
                     safe_name = _safe_filename(basename, "unnamed.dst")
@@ -830,3 +845,131 @@ async def dev_load_sample(user: dict = Depends(get_current_user)):
         "dst_count": len(found),
         "dst_all_matched": True,
     }
+
+
+# ---------------------------------------------------------------------------
+# Version endpoint (for update notifications)
+# ---------------------------------------------------------------------------
+
+APP_VERSION = "1.0.0"
+GITHUB_REPO = "shaanpawa/embroidery-combiner"
+_version_cache: dict = {}
+_version_cache_time: float = 0
+
+
+@app.get("/api/version")
+async def version_endpoint():
+    """Return current app version and latest available version from GitHub."""
+    import time
+    global _version_cache, _version_cache_time
+
+    result = {"version": APP_VERSION, "latest": None, "update_url": None, "update_available": False, "installer_url": None}
+
+    # Cache GitHub check for 1 hour
+    if _version_cache and time.time() - _version_cache_time < 3600:
+        result.update(_version_cache)
+        return result
+
+    # Non-blocking check for latest release
+    try:
+        import urllib.request
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github.v3+json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            latest = data.get("tag_name", "").lstrip("v")
+            html_url = data.get("html_url", "")
+            # Find the installer asset (.exe) for desktop auto-update
+            installer_url = None
+            for asset in data.get("assets", []):
+                if asset.get("name", "").endswith(".exe"):
+                    installer_url = asset.get("browser_download_url")
+                    break
+            _version_cache = {
+                "latest": latest,
+                "update_url": html_url,
+                "installer_url": installer_url,
+                "update_available": latest != APP_VERSION and latest > APP_VERSION,
+            }
+            _version_cache_time = time.time()
+            result.update(_version_cache)
+    except Exception:
+        pass  # No internet or repo not set up yet — gracefully skip
+
+    return result
+
+
+@app.get("/api/update/download")
+async def download_update():
+    """Download the latest installer from GitHub to a temp directory (desktop mode only)."""
+    import tempfile
+    import urllib.request
+
+    if os.environ.get("DESKTOP_MODE", "").lower() != "true":
+        raise HTTPException(status_code=404, detail="Only available in desktop mode")
+
+    # Get the installer URL from version check
+    version_info = await version_endpoint()
+    if not version_info.get("update_available") or not version_info.get("installer_url"):
+        raise HTTPException(status_code=404, detail="No update available")
+
+    installer_url = version_info["installer_url"]
+    latest = version_info["latest"]
+
+    try:
+        temp_dir = os.path.join(tempfile.gettempdir(), "MicroAutomation_Update")
+        os.makedirs(temp_dir, exist_ok=True)
+        installer_path = os.path.join(temp_dir, f"MicroAutomation_Setup_v{latest}.exe")
+
+        # Download if not already cached
+        if not os.path.exists(installer_path):
+            req = urllib.request.Request(installer_url)
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                with open(installer_path, "wb") as f:
+                    f.write(resp.read())
+
+        return {"path": installer_path, "version": latest}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {e}")
+
+
+@app.post("/api/update/install")
+async def install_update():
+    """Launch the downloaded installer and shut down the current app (desktop mode only)."""
+    import subprocess
+    import tempfile
+    import glob as glob_mod
+
+    if os.environ.get("DESKTOP_MODE", "").lower() != "true":
+        raise HTTPException(status_code=404, detail="Only available in desktop mode")
+
+    temp_dir = os.path.join(tempfile.gettempdir(), "MicroAutomation_Update")
+    installers = sorted(glob_mod.glob(os.path.join(temp_dir, "MicroAutomation_Setup_v*.exe")))
+    if not installers:
+        raise HTTPException(status_code=404, detail="No downloaded installer found")
+
+    installer_path = installers[-1]  # Latest version
+
+    try:
+        # Launch installer in silent mode and exit
+        subprocess.Popen([installer_path, "/SILENT"], creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+        # Schedule shutdown
+        import threading
+        threading.Timer(1.0, lambda: os._exit(0)).start()
+        return {"status": "installing", "path": installer_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Install launch failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Static file serving for desktop/local mode
+# ---------------------------------------------------------------------------
+
+if os.environ.get("DESKTOP_MODE", "").lower() == "true":
+    from fastapi.staticfiles import StaticFiles
+
+    _app_root = os.environ.get("MICRO_APP_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _static_dir = os.path.join(_app_root, "static_web")
+    if os.path.isdir(_static_dir):
+        # Must be mounted LAST so API routes take priority
+        app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")

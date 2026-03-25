@@ -1,8 +1,13 @@
+const IS_LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
+
 let cachedToken: string | null = null;
 let tokenFetchedAt = 0;
 const TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function getToken(): Promise<string | null> {
+  // Local mode: no auth needed, backend has AUTH_DISABLED=true
+  if (IS_LOCAL_MODE) return null;
+
   if (cachedToken && Date.now() - tokenFetchedAt < TOKEN_TTL_MS) {
     return cachedToken;
   }
@@ -55,7 +60,7 @@ export async function authFetch(
       if (res.status === 401 || res.status === 403) {
         cachedToken = null;
         tokenFetchedAt = 0;
-        if (typeof window !== "undefined") {
+        if (!IS_LOCAL_MODE && typeof window !== "undefined") {
           window.location.href = "/login";
         }
       }

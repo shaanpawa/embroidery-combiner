@@ -1,0 +1,55 @@
+name: Build Desktop App
+
+on:
+  push:
+    tags:
+      - "v*"  # Triggered by: git tag v1.0.0 && git push --tags
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write  # Needed to create releases
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller pystray Pillow
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Update versions from tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          (Get-Content installer.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" | Set-Content installer.iss
+          (Get-Content api/server.py) -replace 'APP_VERSION = ".*"', "APP_VERSION = `"$version`"" | Set-Content api/server.py
+
+      - name: Build desktop app (frontend + PyInstaller + installer)
+        run: python build_desktop.py
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MicroAutomation_Setup_v*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

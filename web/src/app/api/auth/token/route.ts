@@ -1,12 +1,13 @@
 import { auth } from "@/auth";
 import { SignJWT } from "jose";
 
-// Credentials provider is always registered, so auth is always configured
-const isAuthConfigured = true;
+export const dynamic = "force-dynamic";
 
-const secret = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET || "dev-secret-not-for-production"
-);
+const rawSecret = process.env.NEXTAUTH_SECRET;
+if (!rawSecret) {
+  throw new Error("NEXTAUTH_SECRET environment variable is required");
+}
+const secret = new TextEncoder().encode(rawSecret);
 
 async function signToken(email: string, name: string): Promise<string> {
   return new SignJWT({ email, name })
@@ -16,12 +17,6 @@ async function signToken(email: string, name: string): Promise<string> {
 }
 
 export async function GET() {
-  // Dev mode: return a dev token without requiring session
-  if (!isAuthConfigured) {
-    const token = await signToken("local@dev", "Local Dev");
-    return Response.json({ token });
-  }
-
   const session = await auth();
   if (!session?.user?.email) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
