@@ -4,10 +4,10 @@ Build script for Micro Automation desktop app.
 Usage: python build_desktop.py [--skip-frontend] [--skip-installer]
 
 Steps:
-1. Build Next.js static export → web/out/
-2. Copy web/out/ → static_web/
-3. Run PyInstaller → dist/MicroAutomation/
-4. Run Inno Setup → dist/MicroAutomation_Setup_vX.Y.Z.exe
+1. Build Next.js static export -> web/out/
+2. Copy web/out/ -> static_web/
+3. Run PyInstaller -> dist/MicroAutomation/
+4. Run Inno Setup -> dist/MicroAutomation_Setup_vX.Y.Z.exe
 """
 
 import argparse
@@ -66,7 +66,7 @@ def build_frontend():
         if os.path.exists(path):
             basename = os.path.basename(path)
             backup = os.path.join(backup_dir, basename)
-            print(f"  Moving aside: {os.path.relpath(path, PROJECT_ROOT)} → _static_build_backup/{basename}")
+            print(f"  Moving aside: {os.path.relpath(path, PROJECT_ROOT)} -> _static_build_backup/{basename}")
             shutil.move(path, backup)
             moved.append((path, backup))
 
@@ -100,7 +100,7 @@ def build_frontend():
     if os.path.isdir(static_dir):
         shutil.rmtree(static_dir)
     shutil.copytree(out_dir, static_dir)
-    print(f"Copied {out_dir} → {static_dir}")
+    print(f"Copied {out_dir} -> {static_dir}")
 
 
 def build_pyinstaller():
