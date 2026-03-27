@@ -323,7 +323,7 @@ def run_tray(port: int, stop_event: threading.Event):
         icon = pystray.Icon(
             "MicroAutomation",
             img,
-            "Micro Automation",
+            f"Micro Automation — localhost:{port}",
             menu=pystray.Menu(
                 pystray.MenuItem("Open Micro Automation", on_open, default=True),
                 pystray.MenuItem("Quit", on_quit),
@@ -349,6 +349,23 @@ def main():
     log.info(f"  LOG_FILE: {LOG_FILE}")
     log.info(f"  Frozen: {getattr(sys, 'frozen', False)}")
     log.info("=" * 60)
+
+    # Verify static frontend exists (PyInstaller bundle)
+    if getattr(sys, "frozen", False):
+        static_dir = os.path.join(APP_ROOT, "static_web")
+        if not os.path.isdir(static_dir) or not os.listdir(static_dir):
+            log.error(f"static_web/ directory missing or empty at {static_dir}")
+            show_error_dialog(
+                "Micro Automation",
+                "Installation may be corrupted — frontend files are missing.\n"
+                "การติดตั้งอาจเสียหาย — ไม่พบไฟล์ frontend\n\n"
+                "Please reinstall the application.\n"
+                "กรุณาติดตั้งแอปพลิเคชันใหม่\n\n"
+                f"Expected: {static_dir}\n"
+                f"Log file: {LOG_FILE}",
+            )
+            sys.exit(1)
+        log.info(f"static_web/ verified: {len(os.listdir(static_dir))} files")
 
     # Find a free port
     port = find_free_port()
@@ -376,6 +393,16 @@ def main():
     # Wait for server to be ready
     if wait_for_server(port):
         log.info("Server is ready — splash page will auto-redirect")
+        # Write URL fallback file to desktop (user can open manually if browser redirect fails)
+        try:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            if os.path.isdir(desktop):
+                url_file = os.path.join(desktop, "MicroAutomation.url")
+                with open(url_file, "w") as f:
+                    f.write(f"[InternetShortcut]\nURL=http://localhost:{port}\n")
+                log.info(f"URL shortcut written to {url_file}")
+        except Exception as e:
+            log.warning(f"Could not write URL shortcut: {e}")
     else:
         log.error("Server did not start within timeout")
         show_error_dialog(

@@ -93,11 +93,14 @@ export function clearAuthToken() {
 export async function warmupBackend(
   apiUrl: string,
   onStatus?: (status: "connecting" | "ready" | "failed") => void,
-  maxAttempts = 10,
+  onProgress?: (elapsed: number) => void,
+  maxAttempts = 30,
   intervalMs = 2000,
 ): Promise<boolean> {
   onStatus?.("connecting");
+  const start = Date.now();
   for (let i = 0; i < maxAttempts; i++) {
+    onProgress?.(Math.round((Date.now() - start) / 1000));
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
@@ -120,4 +123,26 @@ export async function warmupBackend(
   }
   onStatus?.("failed");
   return false;
+}
+
+/**
+ * Ensure the backend is awake before making a request.
+ * If the server was sleeping (Render free tier), wakes it up first.
+ * Returns true if ready, false if warmup failed.
+ */
+export async function ensureBackendAwake(
+  apiUrl: string,
+  onStatus?: (status: "connecting" | "ready" | "failed") => void,
+  onProgress?: (elapsed: number) => void,
+): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${apiUrl}/api/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (res.ok) return true;
+  } catch {
+    // Server not responding — run full warmup
+  }
+  return warmupBackend(apiUrl, onStatus, onProgress);
 }

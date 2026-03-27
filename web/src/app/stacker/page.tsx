@@ -11,7 +11,7 @@ const IS_LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
 const useSession = IS_LOCAL_MODE ? () => ({ data: null }) as ReturnType<typeof _useSession> : _useSession;
 import { useTheme } from "../theme-provider";
 import { useLanguage } from "../i18n";
-import { authFetch, clearAuthToken, warmupBackend } from "@/lib/api";
+import { authFetch, clearAuthToken, warmupBackend, ensureBackendAwake } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -268,6 +268,7 @@ export default function EmbroideryStacker() {
   const [addedMaRefs, setAddedMaRefs] = useState<Set<string>>(new Set());
   const [addedComRefs, setAddedComRefs] = useState<Set<string>>(new Set());
   const [backendStatus, setBackendStatus] = useState<"connecting" | "ready" | "failed">(IS_LOCAL_MODE ? "ready" : "connecting");
+  const [warmupElapsed, setWarmupElapsed] = useState(0);
   const [updateInfo, setUpdateInfo] = useState<{ latest: string; update_url: string; installer_url?: string } | null>(null);
   const [currentVersion, setCurrentVersion] = useState("1.0.0");
   const [updateDismissed, setUpdateDismissed] = useState(false);
@@ -407,7 +408,7 @@ export default function EmbroideryStacker() {
 
   useEffect(() => {
     fetchSessions();
-    if (!IS_LOCAL_MODE) warmupBackend(API, setBackendStatus);
+    if (!IS_LOCAL_MODE) warmupBackend(API, setBackendStatus, setWarmupElapsed);
 
     // Show guided tour on first visit
     if (!localStorage.getItem("tour-completed")) {
@@ -436,6 +437,15 @@ export default function EmbroideryStacker() {
     };
     window.addEventListener("beforeunload", cleanup);
     return () => window.removeEventListener("beforeunload", cleanup);
+  }, [sessionId]);
+
+  // Keep-alive ping: prevent Render from sleeping while session is active
+  useEffect(() => {
+    if (IS_LOCAL_MODE || !sessionId) return;
+    const interval = setInterval(() => {
+      fetch(`${API}/api/health`, { mode: "cors" }).catch(() => {});
+    }, 10 * 60 * 1000); // every 10 minutes
+    return () => clearInterval(interval);
   }, [sessionId]);
 
   const saveSessionName = useCallback(async (sid: string, name: string) => {
@@ -895,7 +905,8 @@ export default function EmbroideryStacker() {
 
   const retryWarmup = useCallback(() => {
     setBackendStatus("connecting");
-    warmupBackend(API, setBackendStatus);
+    setWarmupElapsed(0);
+    warmupBackend(API, setBackendStatus, setWarmupElapsed);
   }, []);
 
   const startSession = () => { if (!sessionName.trim()) return; setSessionStarted(true); };
@@ -903,7 +914,7 @@ export default function EmbroideryStacker() {
 
   const connectingBanner = backendStatus !== "ready" ? (
     <div className="w-full text-center text-xs py-2 px-4" style={{ background: backendStatus === "failed" ? "var(--danger)" : "var(--accent)", color: "white" }}>
-      {backendStatus === "connecting" && <>{t("cb.connecting") || "Connecting to server..."}</>}
+      {backendStatus === "connecting" && <>{t("cb.server_waking") || "Waking up server..."} ({warmupElapsed}s)</>}
       {backendStatus === "failed" && (
         <>{t("cb.connect_failed") || "Could not reach server."} <button onClick={retryWarmup} className="underline ml-1 font-medium">{t("cb.retry") || "Retry"}</button></>
       )}

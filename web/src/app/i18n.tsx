@@ -37,6 +37,7 @@ const translations: Record<string, Record<Lang, string>> = {
 
   // Stacker - Connection
   "cb.connecting": { en: "Connecting to server...", th: "กำลังเชื่อมต่อเซิร์ฟเวอร์..." },
+  "cb.server_waking": { en: "Waking up server...", th: "กำลังปลุกเซิร์ฟเวอร์..." },
   "cb.connect_failed": { en: "Could not reach server.", th: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้" },
   "cb.retry": { en: "Retry", th: "ลองอีกครั้ง" },
   // Stacker - Session Picker
