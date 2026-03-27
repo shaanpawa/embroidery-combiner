@@ -98,11 +98,15 @@ async def health(background_tasks: BackgroundTasks):
     return {"status": "ok"}
 
 
-# CORS: allow localhost for dev + production frontend URL from env
+# CORS: allow localhost for dev + production frontend URLs from env
 _cors_origins = ["http://localhost:3000", "http://localhost:5123"]
 _frontend_url = os.environ.get("FRONTEND_URL")
 if _frontend_url:
-    _cors_origins.append(_frontend_url)
+    # Support comma-separated URLs (e.g., "https://a.vercel.app,https://b.vercel.app")
+    for url in _frontend_url.split(","):
+        url = url.strip()
+        if url:
+            _cors_origins.append(url)
 
 app.add_middleware(
     CORSMiddleware,
