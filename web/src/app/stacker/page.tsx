@@ -1328,7 +1328,7 @@ export default function EmbroideryStacker() {
                     </div>
                   </div>
                   {(!maReference || maReference.length === 0) && (
-                    <p style={{ color: "var(--muted)" }}>Loading default MA reference data...</p>
+                    <p style={{ color: "var(--muted)" }}>{maRefLoading ? "Loading reference data..." : "Default reference will load automatically. If empty, upload your Size \u2192 MA reference Excel."}</p>
                   )}
                   {maRefExpanded && maReference && maReference.length > 0 && (
                     <div className="mt-2">
