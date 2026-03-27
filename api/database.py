@@ -67,12 +67,16 @@ def init_db() -> sqlite3.Connection:
             assign_result_json TEXT
         )
     """)
-    # Migrate: add assign_result_json column if it doesn't exist (for existing DBs)
-    try:
-        conn.execute("ALTER TABLE sessions ADD COLUMN assign_result_json TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    # Migrate: add columns if they don't exist (for existing DBs)
+    for col, col_type in [
+        ("assign_result_json", "TEXT"),
+        ("optimize_heads", "INTEGER DEFAULT 0"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ma_reference (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,6 +84,18 @@ def init_db() -> sqlite3.Connection:
             size_display     TEXT NOT NULL,
             ma_number        TEXT NOT NULL,
             created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS com_reference (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            ma_number        TEXT NOT NULL,
+            com_number       INTEGER NOT NULL,
+            fabric_colour    TEXT NOT NULL,
+            embroidery_colour TEXT NOT NULL,
+            frame_colour     TEXT NOT NULL,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(ma_number, fabric_colour, embroidery_colour, frame_colour)
         )
     """)
     conn.commit()
@@ -140,6 +156,182 @@ def clear_ma_reference() -> int:
         cur = db.execute("DELETE FROM ma_reference")
         db.commit()
     return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# COM Reference CRUD
+# ---------------------------------------------------------------------------
+
+def get_com_reference() -> List[Dict]:
+    """Return all COM reference mappings as a list of dicts."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT ma_number, com_number, fabric_colour, embroidery_colour, frame_colour "
+        "FROM com_reference ORDER BY ma_number, com_number"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_com_lookup() -> Dict[str, Dict[tuple, int]]:
+    """Return nested lookup: ma_number → {(fabric, embroidery, frame): com_number}.
+
+    Color keys are title-cased to match auto-assign normalization.
+    """
+    db = get_db()
+    rows = db.execute(
+        "SELECT ma_number, com_number, fabric_colour, embroidery_colour, frame_colour "
+        "FROM com_reference"
+    ).fetchall()
+    lookup: Dict[str, Dict[tuple, int]] = {}
+    for r in rows:
+        ma = r["ma_number"]
+        key = (r["fabric_colour"], r["frame_colour"], r["embroidery_colour"])
+        if ma not in lookup:
+            lookup[ma] = {}
+        lookup[ma][key] = r["com_number"]
+    return lookup
+
+
+def get_max_com_per_ma() -> Dict[str, int]:
+    """Return the highest COM number per MA, so new COMs can continue sequencing."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT ma_number, MAX(com_number) as max_com FROM com_reference GROUP BY ma_number"
+    ).fetchall()
+    return {r["ma_number"]: r["max_com"] for r in rows}
+
+
+def upsert_com_reference(mappings: List[Dict]) -> int:
+    """Insert or replace COM reference mappings.
+
+    Each mapping must have: ma_number, com_number, fabric_colour, embroidery_colour, frame_colour.
+    """
+    db = get_db()
+    now = _now()
+    with _db_lock:
+        for m in mappings:
+            db.execute(
+                """
+                INSERT INTO com_reference (ma_number, com_number, fabric_colour, embroidery_colour, frame_colour, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ma_number, fabric_colour, embroidery_colour, frame_colour) DO UPDATE SET
+                    com_number = excluded.com_number,
+                    created_at = excluded.created_at
+                """,
+                (m["ma_number"], m["com_number"], m["fabric_colour"], m["embroidery_colour"], m["frame_colour"], now),
+            )
+        db.commit()
+    return len(mappings)
+
+
+def clear_com_reference() -> int:
+    """Delete all COM reference mappings. Returns number of rows deleted."""
+    db = get_db()
+    with _db_lock:
+        cur = db.execute("DELETE FROM com_reference")
+        db.commit()
+    return cur.rowcount
+
+
+def add_single_ma(size_normalized: str, size_display: str, ma_number: str) -> Dict:
+    """Add or update a single MA reference entry. Returns the saved entry."""
+    db = get_db()
+    now = _now()
+    with _db_lock:
+        db.execute(
+            """
+            INSERT INTO ma_reference (size_normalized, size_display, ma_number, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(size_normalized) DO UPDATE SET
+                size_display = excluded.size_display,
+                ma_number = excluded.ma_number,
+                created_at = excluded.created_at
+            """,
+            (size_normalized, size_display, ma_number, now),
+        )
+        db.commit()
+    row = db.execute(
+        "SELECT id, size_normalized, size_display, ma_number FROM ma_reference WHERE size_normalized = ?",
+        (size_normalized,),
+    ).fetchone()
+    return dict(row)
+
+
+def update_ma_reference_entry(entry_id: int, **kwargs) -> Optional[Dict]:
+    """Update a single MA reference entry by ID. Returns updated entry or None."""
+    allowed = {"size_normalized", "size_display", "ma_number"}
+    filtered = {k: v for k, v in kwargs.items() if k in allowed}
+    if not filtered:
+        return None
+    db = get_db()
+    set_clause = ", ".join(f"{k} = ?" for k in filtered)
+    values = list(filtered.values()) + [entry_id]
+    with _db_lock:
+        db.execute(f"UPDATE ma_reference SET {set_clause} WHERE id = ?", values)
+        db.commit()
+    row = db.execute("SELECT id, size_normalized, size_display, ma_number FROM ma_reference WHERE id = ?", (entry_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_ma_reference_entry(entry_id: int) -> bool:
+    """Delete a single MA reference entry by ID."""
+    db = get_db()
+    with _db_lock:
+        cur = db.execute("DELETE FROM ma_reference WHERE id = ?", (entry_id,))
+        db.commit()
+    return cur.rowcount > 0
+
+
+def add_single_com(ma_number: str, com_number: int, fabric_colour: str, embroidery_colour: str, frame_colour: str) -> Dict:
+    """Add or update a single COM reference entry. Returns the saved entry."""
+    db = get_db()
+    now = _now()
+    with _db_lock:
+        db.execute(
+            """
+            INSERT INTO com_reference (ma_number, com_number, fabric_colour, embroidery_colour, frame_colour, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ma_number, fabric_colour, embroidery_colour, frame_colour) DO UPDATE SET
+                com_number = excluded.com_number,
+                created_at = excluded.created_at
+            """,
+            (ma_number, com_number, fabric_colour, embroidery_colour, frame_colour, now),
+        )
+        db.commit()
+    row = db.execute(
+        "SELECT id, ma_number, com_number, fabric_colour, embroidery_colour, frame_colour "
+        "FROM com_reference WHERE ma_number = ? AND fabric_colour = ? AND embroidery_colour = ? AND frame_colour = ?",
+        (ma_number, fabric_colour, embroidery_colour, frame_colour),
+    ).fetchone()
+    return dict(row)
+
+
+def update_com_reference_entry(entry_id: int, **kwargs) -> Optional[Dict]:
+    """Update a single COM reference entry by ID. Returns updated entry or None."""
+    allowed = {"ma_number", "com_number", "fabric_colour", "embroidery_colour", "frame_colour"}
+    filtered = {k: v for k, v in kwargs.items() if k in allowed}
+    if not filtered:
+        return None
+    db = get_db()
+    set_clause = ", ".join(f"{k} = ?" for k in filtered)
+    values = list(filtered.values()) + [entry_id]
+    with _db_lock:
+        db.execute(f"UPDATE com_reference SET {set_clause} WHERE id = ?", values)
+        db.commit()
+    row = db.execute(
+        "SELECT id, ma_number, com_number, fabric_colour, embroidery_colour, frame_colour FROM com_reference WHERE id = ?",
+        (entry_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_com_reference_entry(entry_id: int) -> bool:
+    """Delete a single COM reference entry by ID."""
+    db = get_db()
+    with _db_lock:
+        cur = db.execute("DELETE FROM com_reference WHERE id = ?", (entry_id,))
+        db.commit()
+    return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +400,7 @@ _ALLOWED_COLUMNS = {
     "excel_filename", "entries_json", "groups_json", "combos_json",
     "dst_programs_json", "gap_mm", "column_gap_mm",
     "exported", "exported_at", "assign_result_json",
+    "optimize_heads",
 }
 
 

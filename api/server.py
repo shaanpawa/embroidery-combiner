@@ -45,6 +45,8 @@ from api.database import (
     get_session_dir, get_dst_dir, get_output_dir,
     cleanup_old_sessions,
     get_ma_reference, get_ma_lookup, upsert_ma_reference, clear_ma_reference,
+    get_com_reference, get_com_lookup, get_max_com_per_ma,
+    upsert_com_reference, clear_com_reference,
 )
 from api.auth import get_current_user
 
@@ -171,6 +173,7 @@ def _combos_to_json(combos: list) -> list:
             "slot_count": len(c.slots),
             "left_count": len(c.left_column),
             "right_count": len(c.right_column),
+            "head_mode": c.head_mode or "",
             "slots": [
                 {
                     "program": s.program,
@@ -204,6 +207,7 @@ def _build_groups_response(entries, combos, groups) -> list:
                     "slot_count": len(c.slots),
                     "left_count": len(c.left_column),
                     "right_count": len(c.right_column),
+                    "head_mode": c.head_mode or "",
                     "slots": [
                         {"program": s.program, "name_line1": s.name_line1,
                          "name_line2": s.name_line2, "quantity": s.quantity}
@@ -257,6 +261,7 @@ async def parse_excel_endpoint(
     file: UploadFile = File(None),
     session_id: str = Form(None),
     column_map: str = Form(None),
+    optimize_heads: bool = Form(False),
     user: dict = Depends(get_current_user),
 ):
     sid, session = _ensure_session(session_id, user["email"])
@@ -295,23 +300,35 @@ async def parse_excel_endpoint(
         return {"session_id": sid, "entries_count": 0, "groups": [], "combos": [], "warnings": result.warnings}
 
     groups = group_entries(result.entries)
-    combos = generate_all_combos(result.entries)
+    combos = generate_all_combos(result.entries, optimize_heads=optimize_heads)
 
     entries_data = _entries_to_json(result.entries)
     groups_data = _build_groups_response(result.entries, combos, groups)
     combos_data = _combos_to_json(combos)
+
+    # Calculate head optimization stats
+    even_file_count = sum(1 for c in combos if c.head_mode == "2-HEAD")
+    odd_file_count = sum(1 for c in combos if c.head_mode == "1-HEAD")
+    total_original_slots = sum(e.quantity for e in result.entries)
+    total_optimized_slots = sum(len(c.slots) for c in combos)
+    slots_saved = total_original_slots - total_optimized_slots if optimize_heads else 0
 
     update_session(
         sid,
         entries_json=entries_data,
         groups_json=groups_data,
         combos_json=combos_data,
+        optimize_heads=1 if optimize_heads else 0,
     )
 
     return {
         "session_id": sid,
         "entries_count": len(result.entries),
-        "total_slots": sum(e.quantity for e in result.entries),
+        "total_slots": total_original_slots,
+        "optimized_slots": total_optimized_slots,
+        "slots_saved": slots_saved,
+        "even_file_count": even_file_count,
+        "odd_file_count": odd_file_count,
         "groups": groups_data,
         "combo_count": len(combos),
         "warnings": result.warnings,
@@ -410,7 +427,8 @@ async def export_endpoint(
         raise HTTPException(400, "No combos parsed yet")
 
     entries = _entries_from_json(entries_data)
-    combos = generate_all_combos(entries)
+    optimize_heads = bool(session.get("optimize_heads", 0))
+    combos = generate_all_combos(entries, optimize_heads=optimize_heads)
 
     selected_set = set(f.strip() for f in selected_filenames.split(",") if f.strip())
     if selected_set:
@@ -529,8 +547,11 @@ async def upload_ma_reference_endpoint(
     if len(rows) < 2:
         raise HTTPException(400, "Excel file has no data rows")
 
-    # Parse: Column A (index 0) = size, Column F (index 5) = MA number
+    # Parse columns:
+    #   A (0) = size, B (1) = fabric, C (2) = embroidery, D (3) = frame
+    #   F (5) = MA number, G (6) = COM number
     mappings = []
+    com_mappings = []
     seen_sizes = {}  # normalized → mapping dict
     warnings = []
 
@@ -556,16 +577,41 @@ async def upload_ma_reference_endpoint(
                 f"but already mapped to '{seen_sizes[size_normalized]['ma_number']}' — keeping first"
             )
 
+        # Parse COM + color columns (B=fabric, C=name/embroidery, D=frame, G=com)
+        # Reference Excel: C=embroidery, D=frame
+        # Order Excel:     J=frame,      K=embroidery
+        # We store as frame_colour / embroidery_colour to match auto-assign lookup keys
+        fabric_raw = str(row[1] or "").strip().title() if len(row) > 1 else ""
+        embroidery_raw = str(row[2] or "").strip().title() if len(row) > 2 else ""
+        frame_raw = str(row[3] or "").strip().title() if len(row) > 3 else ""
+        com_raw = row[6] if len(row) > 6 else None
+
+        if fabric_raw and embroidery_raw and frame_raw and com_raw is not None:
+            try:
+                com_num = int(com_raw)
+                com_mappings.append({
+                    "ma_number": ma_raw,
+                    "com_number": com_num,
+                    "fabric_colour": fabric_raw,
+                    "embroidery_colour": embroidery_raw,
+                    "frame_colour": frame_raw,
+                })
+            except (ValueError, TypeError):
+                warnings.append(f"Row {row_num}: invalid COM number '{com_raw}', skipped COM mapping")
+
     mappings = list(seen_sizes.values())
     if not mappings:
         raise HTTPException(400, "No valid size → MA mappings found in the file")
 
-    # Clear existing and insert new
+    # Clear existing and insert new (both MA and COM references)
     clear_ma_reference()
+    clear_com_reference()
     count = upsert_ma_reference(mappings)
+    com_count = upsert_com_reference(com_mappings) if com_mappings else 0
 
     return {
         "count": count,
+        "com_count": com_count,
         "mappings": mappings,
         "warnings": warnings,
     }
@@ -573,9 +619,124 @@ async def upload_ma_reference_endpoint(
 
 @app.delete("/api/ma-reference")
 async def delete_ma_reference_endpoint(user: dict = Depends(get_current_user)):
-    """Clear all MA reference data."""
-    deleted = clear_ma_reference()
-    return {"deleted": deleted}
+    """Clear all MA and COM reference data."""
+    deleted_ma = clear_ma_reference()
+    deleted_com = clear_com_reference()
+    return {"deleted_ma": deleted_ma, "deleted_com": deleted_com}
+
+
+@app.get("/api/com-reference")
+async def get_com_reference_endpoint(user: dict = Depends(get_current_user)):
+    """Return all stored COM reference entries."""
+    from api.database import get_com_reference as _get_com_ref
+    entries = _get_com_ref()
+    return {"count": len(entries), "entries": entries}
+
+
+@app.post("/api/ma-reference/add")
+async def add_single_ma_endpoint(
+    size_normalized: str = Form(...),
+    size_display: str = Form(...),
+    ma_number: str = Form(...),
+    user: dict = Depends(get_current_user),
+):
+    """Add or update a single MA reference entry."""
+    from api.database import add_single_ma
+    entry = add_single_ma(size_normalized, size_display, ma_number)
+    return {"ok": True, "entry": entry}
+
+
+@app.put("/api/ma-reference/{entry_id}")
+async def update_ma_reference_endpoint(
+    entry_id: int,
+    size_normalized: str = Form(None),
+    size_display: str = Form(None),
+    ma_number: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Update a single MA reference entry by ID."""
+    from api.database import update_ma_reference_entry
+    kwargs = {}
+    if size_normalized is not None:
+        kwargs["size_normalized"] = size_normalized
+    if size_display is not None:
+        kwargs["size_display"] = size_display
+    if ma_number is not None:
+        kwargs["ma_number"] = ma_number
+    entry = update_ma_reference_entry(entry_id, **kwargs)
+    if entry is None:
+        raise HTTPException(404, "MA reference entry not found")
+    return {"ok": True, "entry": entry}
+
+
+@app.delete("/api/ma-reference/{entry_id}")
+async def delete_single_ma_endpoint(
+    entry_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Delete a single MA reference entry by ID."""
+    from api.database import delete_ma_reference_entry
+    deleted = delete_ma_reference_entry(entry_id)
+    if not deleted:
+        raise HTTPException(404, "MA reference entry not found")
+    return {"ok": True}
+
+
+@app.post("/api/com-reference/add")
+async def add_single_com_endpoint(
+    ma_number: str = Form(...),
+    com_number: int = Form(...),
+    fabric_colour: str = Form(...),
+    embroidery_colour: str = Form(...),
+    frame_colour: str = Form(...),
+    user: dict = Depends(get_current_user),
+):
+    """Add or update a single COM reference entry."""
+    from api.database import add_single_com
+    entry = add_single_com(ma_number, com_number, fabric_colour, embroidery_colour, frame_colour)
+    return {"ok": True, "entry": entry}
+
+
+@app.put("/api/com-reference/{entry_id}")
+async def update_com_reference_endpoint(
+    entry_id: int,
+    ma_number: str = Form(None),
+    com_number: int = Form(None),
+    fabric_colour: str = Form(None),
+    embroidery_colour: str = Form(None),
+    frame_colour: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Update a single COM reference entry by ID."""
+    from api.database import update_com_reference_entry
+    kwargs = {}
+    if ma_number is not None:
+        kwargs["ma_number"] = ma_number
+    if com_number is not None:
+        kwargs["com_number"] = com_number
+    if fabric_colour is not None:
+        kwargs["fabric_colour"] = fabric_colour
+    if embroidery_colour is not None:
+        kwargs["embroidery_colour"] = embroidery_colour
+    if frame_colour is not None:
+        kwargs["frame_colour"] = frame_colour
+    entry = update_com_reference_entry(entry_id, **kwargs)
+    if entry is None:
+        raise HTTPException(404, "COM reference entry not found")
+    return {"ok": True, "entry": entry}
+
+
+@app.delete("/api/com-reference/{entry_id}")
+async def delete_single_com_endpoint(
+    entry_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Delete a single COM reference entry by ID."""
+    from api.database import delete_com_reference_entry
+    deleted = delete_com_reference_entry(entry_id)
+    if not deleted:
+        raise HTTPException(404, "COM reference entry not found")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -638,9 +799,16 @@ async def auto_assign_endpoint(
         except (json.JSONDecodeError, ValueError):
             raise HTTPException(400, "Invalid column_map JSON")
 
-    # Load MA reference lookup if available
+    # Load MA + COM reference lookups if available
     ma_ref = get_ma_lookup()
-    result = auto_assign_ma_com(excel_path, column_map=cmap, ma_lookup=ma_ref or None)
+    com_ref = get_com_lookup()
+    max_coms = get_max_com_per_ma()
+    result = auto_assign_ma_com(
+        excel_path, column_map=cmap,
+        ma_lookup=ma_ref or None,
+        com_lookup=com_ref or None,
+        max_com_per_ma=max_coms or None,
+    )
 
     # Store assignments in session for later use (download / apply)
     update_session(
@@ -681,7 +849,12 @@ async def download_assigned_excel_endpoint(
         raise HTTPException(400, "No Excel file found.")
     excel_path = os.path.join(session_dir, excel_files[0])
 
-    output_path = export_assigned_excel(excel_path, assign_data["assignments"])
+    output_path = export_assigned_excel(
+        excel_path,
+        assign_data["assignments"],
+        ma_summary=assign_data.get("ma_summary"),
+        com_summary=assign_data.get("com_summary"),
+    )
 
     with open(output_path, "rb") as f:
         file_bytes = f.read()
@@ -702,6 +875,7 @@ async def download_assigned_excel_endpoint(
 async def apply_assignments_endpoint(
     session_id: str = Form(...),
     column_map: str = Form(None),
+    optimize_heads: bool = Form(False),
     user: dict = Depends(get_current_user),
 ):
     """Apply auto-assigned MA/COM and parse into combos (combines auto-assign + parse-excel)."""
@@ -718,7 +892,13 @@ async def apply_assignments_endpoint(
     excel_path = os.path.join(session_dir, excel_files[0])
 
     # Write assigned Excel, then parse it using the standard column map
-    assigned_path = export_assigned_excel(excel_path, assign_data["assignments"])
+    assigned_path = export_assigned_excel(
+        excel_path,
+        assign_data["assignments"],
+        ma_summary=assign_data.get("ma_summary"),
+        com_summary=assign_data.get("com_summary"),
+        optimize_heads=optimize_heads,
+    )
 
     # Parse column_map for the standard 6-field mapping if provided
     cmap = None
@@ -729,6 +909,11 @@ async def apply_assignments_endpoint(
         except (json.JSONDecodeError, ValueError):
             raise HTTPException(400, "Invalid column_map JSON")
 
+    # Always auto-detect columns on the assigned Excel (MA/COM columns were appended)
+    if cmap is None:
+        detected = detect_columns(assigned_path)
+        cmap = detected.detected_mapping
+
     result = parse_excel(assigned_path, column_map=cmap)
     os.remove(assigned_path)
 
@@ -737,23 +922,34 @@ async def apply_assignments_endpoint(
         return {"session_id": session_id, "entries_count": 0, "groups": [], "combos": [], "warnings": result.warnings}
 
     groups = group_entries(result.entries)
-    combos = generate_all_combos(result.entries)
+    combos = generate_all_combos(result.entries, optimize_heads=optimize_heads)
 
     entries_data = _entries_to_json(result.entries)
     groups_data = _build_groups_response(result.entries, combos, groups)
     combos_data = _combos_to_json(combos)
+
+    even_file_count = sum(1 for c in combos if c.head_mode == "2-HEAD")
+    odd_file_count = sum(1 for c in combos if c.head_mode == "1-HEAD")
+    total_original_slots = sum(e.quantity for e in result.entries)
+    total_optimized_slots = sum(len(c.slots) for c in combos)
+    slots_saved = total_original_slots - total_optimized_slots if optimize_heads else 0
 
     update_session(
         session_id,
         entries_json=entries_data,
         groups_json=groups_data,
         combos_json=combos_data,
+        optimize_heads=1 if optimize_heads else 0,
     )
 
     return {
         "session_id": session_id,
         "entries_count": len(result.entries),
-        "total_slots": sum(e.quantity for e in result.entries),
+        "total_slots": total_original_slots,
+        "optimized_slots": total_optimized_slots,
+        "slots_saved": slots_saved,
+        "even_file_count": even_file_count,
+        "odd_file_count": odd_file_count,
         "groups": groups_data,
         "combo_count": len(combos),
         "warnings": result.warnings,

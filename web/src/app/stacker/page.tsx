@@ -15,10 +15,10 @@ import { authFetch, clearAuthToken, warmupBackend } from "@/lib/api";
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Slot { program: number; name_line1: string; name_line2: string; quantity: number; }
-interface ComboFile { filename: string; part_number: number; total_parts: number; slot_count: number; left_count: number; right_count: number; slots: Slot[]; }
+interface ComboFile { filename: string; part_number: number; total_parts: number; slot_count: number; left_count: number; right_count: number; slots: Slot[]; head_mode?: string; }
 interface Group { machine_program: string; com_no: string; entry_count: number; total_slots: number; combos: ComboFile[]; }
 interface EntryPreview { program: number; name_line1: string; name_line2: string; quantity: number; com_no: string; machine_program: string; }
-interface ParseResponse { session_id: string; entries_count: number; total_slots: number; groups: Group[]; combo_count: number; warnings: string[]; entries_preview?: EntryPreview[]; }
+interface ParseResponse { session_id: string; entries_count: number; total_slots: number; optimized_slots?: number; slots_saved?: number; even_file_count?: number; odd_file_count?: number; groups: Group[]; combo_count: number; warnings: string[]; entries_preview?: EntryPreview[]; }
 interface DetectResponse { session_id: string; excel_filename: string; headers: string[]; preview_rows: (string | number | null)[][]; detected_mapping: Record<string, number>; confidence: string; }
 const FIELD_KEYS = ["program", "name_line1", "name_line2", "quantity", "com_no", "machine_program"] as const;
 const REQUIRED_FIELDS = ["program", "name_line1", "quantity", "com_no", "machine_program"] as const;
@@ -112,8 +112,13 @@ function getTimeRemaining(expiresAt: string | null): { text: string; color: stri
   } catch { return null; }
 }
 
-// Visual step stepper
-function StepIndicator({ steps, labels }: { steps: {done: boolean; active: boolean}[]; labels: string[] }) {
+// Visual step stepper — completed steps are clickable for back navigation
+function StepIndicator({ steps, labels, descriptions, onStepClick }: {
+  steps: {done: boolean; active: boolean}[];
+  labels: string[];
+  descriptions?: string[];
+  onStepClick?: (step: number) => void;
+}) {
   return (
     <div className="flex items-center justify-center py-1" style={{ animation: "fadeIn 0.5s ease 0.1s forwards", opacity: 0 }}>
       {steps.map((s, i) => (
@@ -126,7 +131,12 @@ function StepIndicator({ steps, labels }: { steps: {done: boolean; active: boole
               transition: "background 0.4s ease",
             }} />
           )}
-          <div className="flex flex-col items-center gap-1">
+          <div
+            className="flex flex-col items-center gap-1"
+            style={{ cursor: s.done ? "pointer" : "default" }}
+            onClick={() => s.done && onStepClick?.(i)}
+            title={s.done ? `Go to: ${labels[i]}` : undefined}
+          >
             <div
               className={s.active ? "step-active-glow" : ""}
               style={{
@@ -137,7 +147,10 @@ function StepIndicator({ steps, labels }: { steps: {done: boolean; active: boole
                 border: s.done ? "none" : s.active ? "2px solid var(--accent)" : "2px solid var(--border)",
                 color: s.done ? "white" : s.active ? "var(--accent)" : "var(--muted)",
                 transition: "all 0.35s cubic-bezier(.4,0,.2,1)",
+                ...(s.done ? { filter: "brightness(1)", transform: "scale(1)" } : {}),
               }}
+              onMouseEnter={(e) => { if (s.done) { e.currentTarget.style.transform = "scale(1.15)"; e.currentTarget.style.filter = "brightness(1.2)"; }}}
+              onMouseLeave={(e) => { if (s.done) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.filter = "brightness(1)"; }}}
             >
               {s.done ? (
                 <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -151,6 +164,13 @@ function StepIndicator({ steps, labels }: { steps: {done: boolean; active: boole
               fontWeight: s.active ? 500 : 400,
               transition: "color 0.3s ease",
             }}>{labels[i]}</span>
+            {descriptions?.[i] && (
+              <span className="hidden sm:block" style={{
+                fontSize: "8px", whiteSpace: "nowrap",
+                color: "var(--muted)", opacity: 0.7,
+                marginTop: "-2px",
+              }}>{descriptions[i]}</span>
+            )}
           </div>
         </div>
       ))}
@@ -223,6 +243,7 @@ export default function EmbroideryStacker() {
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [gapMm, setGapMm] = useState(3);
   const [columnGapMm, setColumnGapMm] = useState(5);
+  const [optimizeHeads, setOptimizeHeads] = useState(true);
   // New: interactive column assignment
   const [activeField, setActiveField] = useState<string | null>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
@@ -231,14 +252,20 @@ export default function EmbroideryStacker() {
   const [assignDetectData, setAssignDetectData] = useState<{headers: string[]; preview_rows: (string|number|null)[][]; detected_mapping: Record<string, number>; confidence: string} | null>(null);
   const [assignColumnMapping, setAssignColumnMapping] = useState<Record<string, number>>({});
   const [assignActiveField, setAssignActiveField] = useState<string | null>(null);
-  const [assignResult, setAssignResult] = useState<{assignments_count: number; ma_summary: {ma: string; size: string; count: number}[]; com_summary: {ma: string; com: number; fabric_colour: string; frame_colour: string; embroidery_colour: string; count: number}[]; warnings: string[]} | null>(null);
+  const [assignResult, setAssignResult] = useState<{assignments_count: number; ma_summary: {ma: string; size: string; count: number; is_new?: boolean}[]; com_summary: {ma: string; com: number; fabric_colour: string; frame_colour: string; embroidery_colour: string; count: number; is_new?: boolean}[]; warnings: string[]} | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignDownloading, setAssignDownloading] = useState(false);
   // MA Reference table state
-  const [maReference, setMaReference] = useState<{size_normalized: string; size_display: string; ma_number: string}[] | null>(null);
+  const [maReference, setMaReference] = useState<{id?: number; size_normalized: string; size_display: string; ma_number: string}[] | null>(null);
   const [maRefLoading, setMaRefLoading] = useState(false);
   const [maRefExpanded, setMaRefExpanded] = useState(false);
   const maRefInputRef = useRef<HTMLInputElement>(null);
+  // COM Reference state
+  const [comReference, setComReference] = useState<{id?: number; ma_number: string; com_number: number; fabric_colour: string; embroidery_colour: string; frame_colour: string}[] | null>(null);
+  const [expandedMaRows, setExpandedMaRows] = useState<Set<string>>(new Set());
+  // Track which items have been added to reference from assign results
+  const [addedMaRefs, setAddedMaRefs] = useState<Set<string>>(new Set());
+  const [addedComRefs, setAddedComRefs] = useState<Set<string>>(new Set());
   const [backendStatus, setBackendStatus] = useState<"connecting" | "ready" | "failed">(IS_LOCAL_MODE ? "ready" : "connecting");
   const [updateInfo, setUpdateInfo] = useState<{ latest: string; update_url: string; installer_url?: string } | null>(null);
   const [currentVersion, setCurrentVersion] = useState("1.0.0");
@@ -249,6 +276,16 @@ export default function EmbroideryStacker() {
   const assignExcelInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
+
+  // Step section refs for scroll-to-step navigation
+  const step0Ref = useRef<HTMLDivElement>(null);
+  const step1Ref = useRef<HTMLDivElement>(null);
+  const step3Ref = useRef<HTMLDivElement>(null);
+
+  const handleStepClick = (stepIndex: number) => {
+    const refs = [step0Ref, step1Ref, step1Ref, step3Ref]; // Step 2 shares step1 zone
+    refs[stepIndex]?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const showToast = useCallback((message: string, type: "error" | "warning" | "success" = "error") => setToast({ message, type }), []);
 
@@ -540,8 +577,17 @@ export default function EmbroideryStacker() {
     } catch { /* ignore */ }
   }, []);
 
-  // Load MA reference on mount
-  useEffect(() => { fetchMaReference(); }, [fetchMaReference]);
+  const fetchComReference = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API}/api/com-reference`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setComReference(data.entries || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  // Load MA + COM reference on mount
+  useEffect(() => { fetchMaReference(); fetchComReference(); }, [fetchMaReference, fetchComReference]);
 
   const uploadMaReference = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
@@ -565,6 +611,39 @@ export default function EmbroideryStacker() {
       if (res.ok) { setMaReference([]); showToast("MA reference cleared", "success"); }
     } catch { showToast("Failed to clear MA reference"); }
   }, [showToast]);
+
+  // Add individual MA entry to reference
+  const addMaToRef = useCallback(async (size: string, ma: string) => {
+    try {
+      const form = new FormData();
+      form.append("size_normalized", size);
+      form.append("size_display", size);
+      form.append("ma_number", ma);
+      const res = await authFetch(`${API}/api/ma-reference/add`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Failed");
+      setAddedMaRefs(prev => new Set(prev).add(ma));
+      fetchMaReference();
+      showToast(`${ma} added to reference`, "success");
+    } catch { showToast("Failed to add MA to reference"); }
+  }, [fetchMaReference, showToast]);
+
+  // Add individual COM entry to reference
+  const addComToRef = useCallback(async (ma: string, com: number, fabric: string, embroidery: string, frame: string) => {
+    try {
+      const form = new FormData();
+      form.append("ma_number", ma);
+      form.append("com_number", String(com));
+      form.append("fabric_colour", fabric);
+      form.append("embroidery_colour", embroidery);
+      form.append("frame_colour", frame);
+      const res = await authFetch(`${API}/api/com-reference/add`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Failed");
+      const key = `${ma}-${com}`;
+      setAddedComRefs(prev => new Set(prev).add(key));
+      fetchComReference();
+      showToast(`COM ${com} (${ma}) added to reference`, "success");
+    } catch { showToast("Failed to add COM to reference"); }
+  }, [fetchComReference, showToast]);
 
   const uploadAssignExcel = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
@@ -626,6 +705,7 @@ export default function EmbroideryStacker() {
     try {
       const form = new FormData();
       form.append("session_id", sessionId);
+      form.append("optimize_heads", String(optimizeHeads));
       const res = await authFetch(`${API}/api/apply-assignments`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
       const data = await res.json();
@@ -661,6 +741,7 @@ export default function EmbroideryStacker() {
     const form = new FormData();
     form.append("session_id", sessionId);
     form.append("column_map", JSON.stringify(columnMapping));
+    form.append("optimize_heads", String(optimizeHeads));
     try {
       const res = await authFetch(`${API}/api/parse-excel`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`${t("err.server")}: ${res.status}`);
@@ -673,7 +754,7 @@ export default function EmbroideryStacker() {
       }
     } catch (e) { showToast(`${t("err.parse_fail")}: ${e instanceof Error ? e.message : t("err.connection")}`); }
     setExcelLoading(false);
-  }, [sessionId, detectData, columnMapping, applyParseData, showToast, t]);
+  }, [sessionId, detectData, columnMapping, optimizeHeads, applyParseData, showToast, t]);
 
   const uploadDst = useCallback(async (files: FileList | File[]) => {
     if (!sessionId) { showToast(t("err.upload_excel_first")); return; }
@@ -1114,12 +1195,14 @@ export default function EmbroideryStacker() {
               { done: step3Done, active: step2Done && !step3Done },
             ]}
             labels={[t("cb.step.generate_ma_com"), t("cb.step.upload_order"), t("cb.step.upload_programs"), t("cb.step.export")]}
+            descriptions={[t("cb.step.desc.generate_ma_com"), t("cb.step.desc.upload_order"), t("cb.step.desc.upload_programs"), t("cb.step.desc.export")]}
+            onStepClick={handleStepClick}
           />
         </div>
 
         {/* ── Step 0: Auto-assign MA & COM ── */}
         {assignMode !== "skipped" && !mappingConfirmed && (
-          <div className="glass-panel overflow-hidden" style={{ animation: "fadeSlideIn 0.35s ease" }}>
+          <div ref={step0Ref} className="glass-panel overflow-hidden" style={{ animation: "fadeSlideIn 0.35s ease" }}>
             {/* Header */}
             <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
               <div>
@@ -1221,23 +1304,87 @@ export default function EmbroideryStacker() {
                     <p style={{ color: "var(--muted)" }}>Upload your Size → MA reference Excel to use real MA numbers. Without it, MA1, MA2... will be generated.</p>
                   )}
                   {maRefExpanded && maReference && maReference.length > 0 && (
-                    <div className="mt-2 overflow-x-auto custom-scroll rounded-lg" style={{ border: "1px solid var(--border)", maxHeight: "200px" }}>
-                      <table className="text-[10px] border-collapse w-full" style={{ fontFamily: "var(--font-geist-mono)" }}>
-                        <thead>
-                          <tr style={{ background: "var(--surface)" }}>
-                            <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>Size</th>
-                            <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>MA Number</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {maReference.map((m, i) => (
-                            <tr key={i}>
-                              <td className="px-3 py-1" style={{ borderBottom: i < maReference.length - 1 ? "1px solid var(--border)" : "none" }}>{m.size_display}</td>
-                              <td className="px-3 py-1 font-medium" style={{ borderBottom: i < maReference.length - 1 ? "1px solid var(--border)" : "none", color: "#f59e0b" }}>{m.ma_number}</td>
+                    <div className="mt-2">
+                      {/* Total counts */}
+                      <p className="text-[9px] mb-1.5" style={{ color: "var(--muted)" }}>
+                        {t("cb.ref.total").replace("{ma}", String(maReference.length)).replace("{com}", String(comReference?.length || 0))}
+                      </p>
+                      <div className="overflow-x-auto overflow-y-auto custom-scroll rounded-lg" style={{ border: "1px solid var(--border)", maxHeight: "300px" }}>
+                        <table className="text-[10px] border-collapse w-full" style={{ fontFamily: "var(--font-geist-mono)" }}>
+                          <thead>
+                            <tr style={{ background: "var(--surface)", position: "sticky", top: 0, zIndex: 1 }}>
+                              <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", width: "20px" }}></th>
+                              <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>Size</th>
+                              <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>MA Number</th>
+                              <th className="px-3 py-1.5 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>COMs</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {maReference.map((m, i) => {
+                              const maComs = comReference?.filter(c => c.ma_number === m.ma_number) || [];
+                              const isExpanded = expandedMaRows.has(m.ma_number);
+                              return (
+                                <>
+                                  <tr
+                                    key={`ma-${i}`}
+                                    style={{ cursor: maComs.length > 0 ? "pointer" : "default" }}
+                                    onClick={() => {
+                                      if (maComs.length === 0) return;
+                                      setExpandedMaRows(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(m.ma_number)) next.delete(m.ma_number);
+                                        else next.add(m.ma_number);
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <td className="px-2 py-1 text-center" style={{ borderBottom: (!isExpanded && i < maReference.length - 1) ? "1px solid var(--border)" : isExpanded ? "none" : "none", color: "var(--muted)", fontSize: "8px" }}>
+                                      {maComs.length > 0 && (isExpanded ? "▼" : "▶")}
+                                    </td>
+                                    <td className="px-3 py-1" style={{ borderBottom: (!isExpanded && i < maReference.length - 1) ? "1px solid var(--border)" : isExpanded ? "none" : "none" }}>{m.size_display}</td>
+                                    <td className="px-3 py-1 font-medium" style={{ borderBottom: (!isExpanded && i < maReference.length - 1) ? "1px solid var(--border)" : isExpanded ? "none" : "none", color: "#f59e0b" }}>{m.ma_number}</td>
+                                    <td className="px-3 py-1 text-right" style={{ borderBottom: (!isExpanded && i < maReference.length - 1) ? "1px solid var(--border)" : isExpanded ? "none" : "none" }}>
+                                      {maComs.length > 0 ? (
+                                        <span className="inline-block px-1.5 py-0.5 rounded text-[9px]" style={{ background: "rgba(38,57,122,0.1)", color: "var(--accent)" }}>{maComs.length}</span>
+                                      ) : (
+                                        <span className="text-[9px]" style={{ color: "var(--muted)" }}>{t("cb.ref.no_coms")}</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                  {isExpanded && maComs.length > 0 && (
+                                    <tr key={`coms-${i}`}>
+                                      <td colSpan={4} style={{ padding: 0, borderBottom: i < maReference.length - 1 ? "1px solid var(--border)" : "none" }}>
+                                        <div className="ml-6 mr-2 mb-1.5 rounded" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                                          <table className="text-[9px] border-collapse w-full">
+                                            <thead>
+                                              <tr>
+                                                <th className="px-2 py-1 text-left font-medium" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>COM</th>
+                                                <th className="px-2 py-1 text-left font-medium" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Fabric</th>
+                                                <th className="px-2 py-1 text-left font-medium" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Frame</th>
+                                                <th className="px-2 py-1 text-left font-medium" style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Embroidery</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {maComs.map((c, ci) => (
+                                                <tr key={ci}>
+                                                  <td className="px-2 py-0.5 font-medium" style={{ color: "var(--accent)", borderBottom: ci < maComs.length - 1 ? "1px solid var(--border)" : "none" }}>{c.com_number}</td>
+                                                  <td className="px-2 py-0.5" style={{ borderBottom: ci < maComs.length - 1 ? "1px solid var(--border)" : "none" }}>{c.fabric_colour}</td>
+                                                  <td className="px-2 py-0.5" style={{ borderBottom: ci < maComs.length - 1 ? "1px solid var(--border)" : "none" }}>{c.frame_colour}</td>
+                                                  <td className="px-2 py-0.5" style={{ borderBottom: ci < maComs.length - 1 ? "1px solid var(--border)" : "none" }}>{c.embroidery_colour}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1388,6 +1535,16 @@ export default function EmbroideryStacker() {
                           <span className="text-[12px] font-medium">{ma.size}</span>
                           <div className="flex-1" />
                           <span className="text-[10px]" style={{ color: "var(--muted)" }}>{ma.count} {t("cb.assign.entries")}</span>
+                          {ma.is_new && !addedMaRefs.has(ma.ma) && (
+                            <button
+                              className="glass-btn text-[9px] px-2 py-0.5 ml-1"
+                              style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
+                              onClick={(e) => { e.stopPropagation(); addMaToRef(ma.size, ma.ma); }}
+                            >{t("cb.ref.add_ma")}</button>
+                          )}
+                          {ma.is_new && addedMaRefs.has(ma.ma) && (
+                            <span className="text-[9px] px-2 py-0.5 ml-1 font-medium" style={{ color: "var(--success)" }}>{t("cb.ref.added")} ✓</span>
+                          )}
                         </div>
                         {/* COM Table */}
                         <div className="overflow-x-auto">
@@ -1399,10 +1556,14 @@ export default function EmbroideryStacker() {
                                 <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", background: "rgba(168,85,247,0.04)" }}>{t("cb.assign.frame_col")}</th>
                                 <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", background: "rgba(34,197,94,0.04)" }}>{t("cb.assign.embroidery_col")}</th>
                                 <th className="px-3 py-1.5 text-right font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", width: "60px" }}>{t("cb.assign.entries")}</th>
+                                <th className="px-2 py-1.5 text-center font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", width: "70px" }}></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {comRows.map((c, i) => (
+                              {comRows.map((c, i) => {
+                                const comKey = `${ma.ma}-${c.com}`;
+                                const isAdded = addedComRefs.has(comKey);
+                                return (
                                 <tr key={i}>
                                   <td className="px-3 py-1.5 font-medium" style={{ color: "var(--accent)", borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none" }}>
                                     <span className="inline-block px-1.5 py-0.5 rounded text-[10px]" style={{ background: "rgba(38,57,122,0.1)" }}>{c.com}</span>
@@ -1411,8 +1572,21 @@ export default function EmbroideryStacker() {
                                   <td className="px-3 py-1.5" style={{ borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(168,85,247,0.03)" }}>{c.frame_colour}</td>
                                   <td className="px-3 py-1.5" style={{ borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(34,197,94,0.03)" }}>{c.embroidery_colour}</td>
                                   <td className="px-3 py-1.5 text-right" style={{ color: "var(--muted)", borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none" }}>{c.count}</td>
+                                  <td className="px-2 py-1.5 text-center" style={{ borderBottom: i < comRows.length - 1 ? "1px solid var(--border)" : "none" }}>
+                                    {c.is_new && !isAdded && (
+                                      <button
+                                        className="glass-btn text-[9px] px-1.5 py-0.5"
+                                        style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
+                                        onClick={() => addComToRef(ma.ma, c.com, c.fabric_colour, c.embroidery_colour, c.frame_colour)}
+                                      >{t("cb.ref.add_to_ref")}</button>
+                                    )}
+                                    {c.is_new && isAdded && (
+                                      <span className="text-[9px] font-medium" style={{ color: "var(--success)" }}>{t("cb.ref.added")} ✓</span>
+                                    )}
+                                  </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -1445,7 +1619,7 @@ export default function EmbroideryStacker() {
 
         {/* Upload Zones */}
         {(assignMode === "skipped" || mappingConfirmed) && (<>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ animation: "slideUp 0.4s ease 0.05s forwards", opacity: 0 }}>
+        <div ref={step1Ref} className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ animation: "slideUp 0.4s ease 0.05s forwards", opacity: 0 }}>
           {/* Excel drop zone */}
           <div
             className={`drop-zone ${excelDragOver ? "drag-over" : ""} ${excelFile ? "has-file" : ""}`}
@@ -1856,15 +2030,22 @@ export default function EmbroideryStacker() {
             </button>
             {showSettings && (
               <div className="glass-panel p-4 flex flex-col sm:flex-row gap-3 sm:gap-6" style={{ animation: "fadeSlideIn 0.2s ease" }}>
-                <label className="flex items-center gap-2 text-[11px]">
+                <label className="flex items-center gap-2 text-[11px] group relative">
                   <span style={{ color: "var(--muted)" }}>{t("cb.settings.vgap")}</span>
+                  <span className="cursor-help" style={{ color: "var(--muted)", fontSize: "10px" }} title={t("cb.settings.vgap.help")}>&#9432;</span>
                   <input type="number" value={gapMm} onChange={(e) => setGapMm(Number(e.target.value))} min={0} max={20} step={0.5} className="w-14 text-center text-[11px] px-2 py-1 rounded-lg bg-transparent" style={{ border: "1px solid var(--border)", color: "var(--foreground)" }} />
                   <span style={{ color: "var(--muted)" }}>mm</span>
                 </label>
-                <label className="flex items-center gap-2 text-[11px]">
+                <label className="flex items-center gap-2 text-[11px] group relative">
                   <span style={{ color: "var(--muted)" }}>{t("cb.settings.cgap")}</span>
+                  <span className="cursor-help" style={{ color: "var(--muted)", fontSize: "10px" }} title={t("cb.settings.cgap.help")}>&#9432;</span>
                   <input type="number" value={columnGapMm} onChange={(e) => setColumnGapMm(Number(e.target.value))} min={0} max={30} step={0.5} className="w-14 text-center text-[11px] px-2 py-1 rounded-lg bg-transparent" style={{ border: "1px solid var(--border)", color: "var(--foreground)" }} />
                   <span style={{ color: "var(--muted)" }}>mm</span>
+                </label>
+                <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                  <input type="checkbox" checked={optimizeHeads} onChange={(e) => setOptimizeHeads(e.target.checked)} className="custom-checkbox" />
+                  <span style={{ color: "var(--muted)" }}>{t("cb.settings.2head")}</span>
+                  <span className="cursor-help" style={{ color: "var(--muted)", fontSize: "10px" }} title={t("cb.settings.2head.help")}>&#9432;</span>
                 </label>
               </div>
             )}
@@ -1890,18 +2071,28 @@ export default function EmbroideryStacker() {
             />
             <span className="stat-arrow hidden sm:block">→</span>
             <StatCard
-              value={parseData.total_slots} label={t("cb.stats.slots")} delay={0.2}
+              value={parseData.optimized_slots ?? parseData.total_slots} label={t("cb.stats.slots")} delay={0.2}
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>}
             />
+            {(parseData.slots_saved ?? 0) > 0 && (<>
+              <span className="stat-arrow hidden sm:block">→</span>
+              <StatCard
+                value={parseData.slots_saved!} label={t("cb.stats.slots_saved")} delay={0.25}
+                icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+              />
+            </>)}
           </div>
         )}
 
         {/* Two-Panel: Combo List + Slot Preview */}
         {parseData && parseData.groups.length > 0 && (
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3 min-h-0" style={{ animation: "slideUp 0.4s ease 0.15s forwards", opacity: 0 }}>
+          <div ref={step3Ref} className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3 min-h-0" style={{ animation: "slideUp 0.4s ease 0.15s forwards", opacity: 0 }}>
             <div className="glass-panel overflow-hidden flex flex-col min-h-[200px] sm:min-h-[300px]">
               <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
-                <span className="text-xs font-medium">{t("cb.files.title")} <span className="font-normal" style={{ color: "var(--muted)" }}>{selectedCombos.size}/{totalCombos}</span></span>
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium">{t("cb.files.title")} <span className="font-normal" style={{ color: "var(--muted)" }}>{selectedCombos.size}/{totalCombos}</span></span>
+                  <span style={{ fontSize: "8px", color: "var(--muted)", opacity: 0.7 }}>{t("cb.files.sort_order")}</span>
+                </div>
                 <div className="flex gap-1">
                   <button onClick={selectAll} className="glass-btn text-[10px]">{t("cb.files.all")}</button>
                   <button onClick={deselectAll} className="glass-btn text-[10px]">{t("cb.files.none")}</button>
@@ -1927,6 +2118,8 @@ export default function EmbroideryStacker() {
                         <div key={combo.filename} className="flex items-center gap-2.5 px-4 py-3 sm:py-2 cursor-pointer transition-all" style={{ background: previewCombo?.filename === combo.filename ? "var(--accent-glow)" : "var(--surface)", borderTop: "1px solid var(--border)", animation: `fadeSlideIn 0.15s ease ${ci * 0.02}s forwards`, opacity: 0 }} onClick={() => { setPreviewCombo(combo); setShowMobilePreview(true); }}>
                           <input type="checkbox" className="custom-checkbox" checked={selectedCombos.has(combo.filename)} onChange={() => toggleCombo(combo.filename)} onClick={(e) => e.stopPropagation()} />
                           <span className="text-[11px] font-mono">{combo.filename}</span>
+                          {combo.head_mode === "2-HEAD" && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(34,197,94,0.15)", color: "#16a34a", border: "1px solid rgba(34,197,94,0.3)" }}>2-HEAD</span>}
+                          {combo.head_mode === "1-HEAD" && <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: "rgba(168,85,247,0.1)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.2)" }}>1-HEAD</span>}
                           <span className="text-[10px] ml-auto tabular-nums" style={{ color: "var(--muted)" }}>{combo.left_count}L{combo.right_count > 0 ? ` + ${combo.right_count}R` : ""}</span>
                         </div>
                       ))}

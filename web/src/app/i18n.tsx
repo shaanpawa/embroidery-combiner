@@ -61,6 +61,10 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.step.upload_order": { en: "Upload Order", th: "อัปโหลดคำสั่งซื้อ" },
   "cb.step.upload_programs": { en: "Upload Programs", th: "อัปโหลดโปรแกรม" },
   "cb.step.export": { en: "Export", th: "ส่งออก" },
+  "cb.step.desc.generate_ma_com": { en: "Auto-assign machine & combo numbers", th: "กำหนดเลข MA และ COM อัตโนมัติ" },
+  "cb.step.desc.upload_order": { en: "Upload Excel & map columns", th: "อัปโหลด Excel และจับคู่คอลัมน์" },
+  "cb.step.desc.upload_programs": { en: "Upload DST program files", th: "อัปโหลดไฟล์โปรแกรม DST" },
+  "cb.step.desc.export": { en: "Download combined files", th: "ดาวน์โหลดไฟล์รวม" },
 
   // Auto-assign MA/COM
   "cb.assign.title": { en: "Generate MA & COM", th: "สร้าง MA & COM" },
@@ -166,6 +170,7 @@ const translations: Record<string, Record<Lang, string>> = {
 
   // Combo list
   "cb.files.title": { en: "Output Files", th: "ไฟล์ผลลัพธ์" },
+  "cb.files.sort_order": { en: "Sorted by MA, then COM", th: "เรียงตาม MA แล้วตาม COM" },
   "cb.files.all": { en: "All", th: "ทั้งหมด" },
   "cb.files.none": { en: "None", th: "ไม่เลือก" },
   "cb.preview.click": { en: "Click a combo to preview", th: "คลิกคอมโบเพื่อดูตัวอย่าง" },
@@ -177,6 +182,11 @@ const translations: Record<string, Record<Lang, string>> = {
   "cb.settings": { en: "Settings", th: "ตั้งค่า" },
   "cb.settings.vgap": { en: "Vertical gap", th: "ระยะห่างแนวตั้ง" },
   "cb.settings.cgap": { en: "Column gap", th: "ระยะห่างคอลัมน์" },
+  "cb.settings.vgap.help": { en: "Gap between names in each column (mm). Default: 3mm", th: "ระยะห่างระหว่างชื่อในแต่ละคอลัมน์ (มม.) ค่าเริ่มต้น: 3 มม." },
+  "cb.settings.cgap.help": { en: "Gap between left and right columns (mm). Default: 5mm", th: "ระยะห่างระหว่างคอลัมน์ซ้ายและขวา (มม.) ค่าเริ่มต้น: 5 มม." },
+  "cb.settings.2head": { en: "2-HEAD optimization", th: "การเพิ่มประสิทธิภาพ 2 หัว" },
+  "cb.settings.2head.help": { en: "Even quantities use half slots — both heads run the same file. Odd quantities unchanged.", th: "จำนวนคู่ใช้ช่องครึ่งหนึ่ง — หัวทั้งสองทำงานไฟล์เดียวกัน จำนวนคี่ไม่เปลี่ยนแปลง" },
+  "cb.stats.slots_saved": { en: "SAVED", th: "ประหยัด" },
 
   // Excel preview
   "cb.excel.view": { en: "View order data", th: "ดูข้อมูลคำสั่งซื้อ" },
@@ -293,6 +303,16 @@ const translations: Record<string, Record<Lang, string>> = {
   "update.latest": { en: "You're on the latest version", th: "คุณใช้เวอร์ชันล่าสุดแล้ว" },
   "update.no_internet": { en: "Could not check for updates", th: "ไม่สามารถตรวจสอบอัปเดตได้" },
   "update.version": { en: "Version", th: "เวอร์ชัน" },
+
+  // Reference management
+  "cb.ref.total": { en: "{ma} MAs, {com} COMs loaded", th: "โหลดแล้ว {ma} MA, {com} COM" },
+  "cb.ref.add_to_ref": { en: "Add to Ref", th: "เพิ่มอ้างอิง" },
+  "cb.ref.added": { en: "Added", th: "เพิ่มแล้ว" },
+  "cb.ref.add_ma": { en: "Add MA", th: "เพิ่ม MA" },
+  "cb.ref.edit": { en: "Edit", th: "แก้ไข" },
+  "cb.ref.delete": { en: "Delete", th: "ลบ" },
+  "cb.ref.confirm_delete": { en: "Delete this entry?", th: "ลบรายการนี้?" },
+  "cb.ref.no_coms": { en: "No COMs", th: "ไม่มี COM" },
 };
 
 const I18nCtx = createContext<I18nContext>({

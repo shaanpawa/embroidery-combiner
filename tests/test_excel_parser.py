@@ -6,7 +6,8 @@ from openpyxl import Workbook
 
 from app.core.excel_parser import (
     ComboFile, ComboGroup, NameEntry, ParseResult,
-    expand_and_split, generate_all_combos, group_entries, parse_excel,
+    expand_and_split, expand_and_split_with_heads,
+    generate_all_combos, group_entries, parse_excel,
 )
 
 
@@ -260,3 +261,144 @@ class TestGenerateAllCombos:
         combos = generate_all_combos(entries)
         assert len(combos) == 3  # 20 + 20 + 10
         assert combos[0].total_parts == 3
+
+
+# --- 2-HEAD optimization tests ---
+
+class TestExpandAndSplitWithHeads:
+    """Tests for expand_and_split_with_heads() — 2-HEAD even quantity optimization."""
+
+    def test_even_qty2_single_slot(self):
+        """qty=2 → 1 slot, 2-HEAD."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "JACK", "", 2, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert len(combos) == 1
+        assert combos[0].head_mode == "2-HEAD"
+        assert len(combos[0].slots) == 1
+        assert combos[0].slots[0].name_line1 == "JACK"
+
+    def test_even_qty4_two_slots(self):
+        """qty=4 → 2 slots, 2-HEAD."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "STEVE", "", 4, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert len(combos) == 1
+        assert combos[0].head_mode == "2-HEAD"
+        assert len(combos[0].slots) == 2
+
+    def test_even_qty20_ten_slots(self):
+        """qty=20 → 10 slots, 2-HEAD."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "WILL", "", 20, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert len(combos) == 1
+        assert combos[0].head_mode == "2-HEAD"
+        assert len(combos[0].slots) == 10
+
+    def test_even_qty80_two_files(self):
+        """qty=80 → 40 slots → 2 files of 20 each, both 2-HEAD."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "BIG ORDER", "", 80, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        even_combos = [c for c in combos if c.head_mode == "2-HEAD"]
+        assert len(even_combos) == 2
+        assert len(even_combos[0].slots) == 20
+        assert len(even_combos[1].slots) == 20
+        assert even_combos[0].total_parts == 2
+        assert even_combos[1].total_parts == 2
+
+    def test_odd_qty1(self):
+        """qty=1 → 1 slot, 1-HEAD."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "SOLO", "", 1, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert len(combos) == 1
+        assert combos[0].head_mode == "1-HEAD"
+        assert len(combos[0].slots) == 1
+
+    def test_odd_qty3(self):
+        """qty=3 → 3 slots, 1-HEAD."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "THREE", "", 3, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert len(combos) == 1
+        assert combos[0].head_mode == "1-HEAD"
+        assert len(combos[0].slots) == 3
+
+    def test_mixed_even_odd_separate_files(self):
+        """qty=2 + qty=3 in same group → separate EVEN and ODD files."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "JACK", "", 2, "1", "MA53345"),
+            NameEntry(2, "STEVE", "", 2, "1", "MA53345"),
+            NameEntry(3, "WILL", "", 2, "1", "MA53345"),
+            NameEntry(4, "ODD_GUY", "", 3, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        even_combos = [c for c in combos if c.head_mode == "2-HEAD"]
+        odd_combos = [c for c in combos if c.head_mode == "1-HEAD"]
+        assert len(even_combos) >= 1
+        assert len(odd_combos) >= 1
+        # Even: 3 names * qty2 / 2 = 3 slots
+        even_slots = sum(len(c.slots) for c in even_combos)
+        assert even_slots == 3
+        # Odd: 1 name * qty3 = 3 slots
+        odd_slots = sum(len(c.slots) for c in odd_combos)
+        assert odd_slots == 3
+
+    def test_filename_even_format(self):
+        """EVEN file includes Qty label."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "JACK", "", 2, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert combos[0].filename == "MA53345_Com1_EVEN_Qty2_1of1.dst"
+
+    def test_filename_odd_format(self):
+        """ODD file has _ODD tag, no Qty label."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "SOLO", "", 1, "1", "MA53345"),
+        ])
+        combos = expand_and_split_with_heads(group)
+        assert combos[0].filename == "MA53345_Com1_ODD_1of1.dst"
+
+    def test_filename_legacy_format(self):
+        """Legacy mode (no head optimization) has no tag."""
+        group = ComboGroup("MA53345", "1", [
+            NameEntry(1, "LEGACY", "", 1, "1", "MA53345"),
+        ])
+        combos = expand_and_split(group)  # legacy function
+        assert combos[0].filename == "MA53345_Com1_1of1.dst"
+        assert combos[0].head_mode == ""
+
+    def test_generate_all_combos_flag_off(self):
+        """optimize_heads=False → legacy behavior, no head_mode tags."""
+        entries = [
+            NameEntry(1, "A", "", 2, "1", "MA53345"),
+            NameEntry(2, "B", "", 3, "1", "MA53345"),
+        ]
+        combos = generate_all_combos(entries, optimize_heads=False)
+        assert all(c.head_mode == "" for c in combos)
+        # Legacy: 2+3=5 total slots
+        assert sum(len(c.slots) for c in combos) == 5
+
+    def test_generate_all_combos_flag_on(self):
+        """optimize_heads=True → uses 2-HEAD split."""
+        entries = [
+            NameEntry(1, "A", "", 2, "1", "MA53345"),
+            NameEntry(2, "B", "", 3, "1", "MA53345"),
+        ]
+        combos = generate_all_combos(entries, optimize_heads=True)
+        even_combos = [c for c in combos if c.head_mode == "2-HEAD"]
+        odd_combos = [c for c in combos if c.head_mode == "1-HEAD"]
+        assert len(even_combos) >= 1  # A (qty=2) → even
+        assert len(odd_combos) >= 1   # B (qty=3) → odd
+        # Even: 2/2 = 1 slot. Odd: 3 slots. Total: 4 (saved 1)
+        total_slots = sum(len(c.slots) for c in combos)
+        assert total_slots == 4
