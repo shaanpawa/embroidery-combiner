@@ -234,6 +234,11 @@ export default function EmbroideryStacker() {
   const [assignResult, setAssignResult] = useState<{assignments_count: number; ma_summary: {ma: string; size: string; count: number}[]; com_summary: {ma: string; com: number; fabric_colour: string; frame_colour: string; embroidery_colour: string; count: number}[]; warnings: string[]} | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignDownloading, setAssignDownloading] = useState(false);
+  // MA Reference table state
+  const [maReference, setMaReference] = useState<{size_normalized: string; size_display: string; ma_number: string}[] | null>(null);
+  const [maRefLoading, setMaRefLoading] = useState(false);
+  const [maRefExpanded, setMaRefExpanded] = useState(false);
+  const maRefInputRef = useRef<HTMLInputElement>(null);
   const [backendStatus, setBackendStatus] = useState<"connecting" | "ready" | "failed">(IS_LOCAL_MODE ? "ready" : "connecting");
   const [updateInfo, setUpdateInfo] = useState<{ latest: string; update_url: string; installer_url?: string } | null>(null);
   const [currentVersion, setCurrentVersion] = useState("1.0.0");
@@ -524,6 +529,42 @@ export default function EmbroideryStacker() {
     } catch (e) { showToast(`${t("err.excel_read")}: ${e instanceof Error ? e.message : t("err.connection")}`); setExcelFile(""); }
     setExcelLoading(false);
   }, [sessionId, resetSession, showToast, sessionName, saveSessionName, fetchSessions, t]);
+
+  // --- MA Reference management ---
+  const fetchMaReference = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API}/api/ma-reference`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setMaReference(data.mappings || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  // Load MA reference on mount
+  useEffect(() => { fetchMaReference(); }, [fetchMaReference]);
+
+  const uploadMaReference = useCallback(async (file: File) => {
+    if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
+    setMaRefLoading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await authFetch(`${API}/api/ma-reference/upload`, { method: "POST", body: form });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || res.statusText); }
+      const data = await res.json();
+      setMaReference(data.mappings || []);
+      showToast(`${data.count} size → MA mappings loaded`, "success");
+      if (data.warnings?.length) data.warnings.forEach((w: string) => showToast(w, "warning"));
+    } catch (e) { showToast(`Failed to upload MA reference: ${e instanceof Error ? e.message : "Unknown error"}`); }
+    setMaRefLoading(false);
+  }, [showToast, t]);
+
+  const clearMaReference = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API}/api/ma-reference`, { method: "DELETE" });
+      if (res.ok) { setMaReference([]); showToast("MA reference cleared", "success"); }
+    } catch { showToast("Failed to clear MA reference"); }
+  }, [showToast]);
 
   const uploadAssignExcel = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
@@ -1144,6 +1185,63 @@ export default function EmbroideryStacker() {
                   </div>
                 </div>
 
+                {/* MA Reference Table */}
+                <div className="mt-4 p-3 rounded-lg text-[11px]" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={maReference && maReference.length > 0 ? "var(--success)" : "var(--muted)"} strokeWidth="2"><path d="M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/><polyline points="14 2 14 8 20 8"/><line x1="2" y1="15" x2="12" y2="15"/><polyline points="9 12 12 15 9 18"/></svg>
+                      <span className="font-medium" style={{ color: "var(--foreground)" }}>MA Reference Table</span>
+                      {maReference && maReference.length > 0 && (
+                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: "rgba(34,197,94,0.15)", color: "var(--success)" }}>
+                          {maReference.length} sizes loaded
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {maReference && maReference.length > 0 && (
+                        <>
+                          <button onClick={() => setMaRefExpanded(!maRefExpanded)} className="glass-btn text-[9px] px-2 py-1">
+                            {maRefExpanded ? "Hide" : "View"}
+                          </button>
+                          <button onClick={clearMaReference} className="glass-btn text-[9px] px-2 py-1" style={{ color: "var(--error)" }}>Clear</button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => maRefInputRef.current?.click()}
+                        className="glass-btn text-[9px] px-2 py-1"
+                        disabled={maRefLoading}
+                        style={{ color: "var(--accent)" }}
+                      >
+                        {maRefLoading ? "Uploading..." : maReference && maReference.length > 0 ? "Replace" : "Upload"}
+                      </button>
+                      <input ref={maRefInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadMaReference(e.target.files[0]); e.target.value = ""; }} />
+                    </div>
+                  </div>
+                  {(!maReference || maReference.length === 0) && (
+                    <p style={{ color: "var(--muted)" }}>Upload your Size → MA reference Excel to use real MA numbers. Without it, MA1, MA2... will be generated.</p>
+                  )}
+                  {maRefExpanded && maReference && maReference.length > 0 && (
+                    <div className="mt-2 overflow-x-auto custom-scroll rounded-lg" style={{ border: "1px solid var(--border)", maxHeight: "200px" }}>
+                      <table className="text-[10px] border-collapse w-full" style={{ fontFamily: "var(--font-geist-mono)" }}>
+                        <thead>
+                          <tr style={{ background: "var(--surface)" }}>
+                            <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>Size</th>
+                            <th className="px-3 py-1.5 text-left font-medium" style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>MA Number</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {maReference.map((m, i) => (
+                            <tr key={i}>
+                              <td className="px-3 py-1" style={{ borderBottom: i < maReference.length - 1 ? "1px solid var(--border)" : "none" }}>{m.size_display}</td>
+                              <td className="px-3 py-1 font-medium" style={{ borderBottom: i < maReference.length - 1 ? "1px solid var(--border)" : "none", color: "#f59e0b" }}>{m.ma_number}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
                 {/* How it works */}
                 <div className="mt-4 p-3 rounded-lg text-[11px]" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                   <p className="font-medium mb-1.5" style={{ color: "var(--foreground)" }}>{t("cb.assign.how_title")}</p>
@@ -1283,7 +1381,10 @@ export default function EmbroideryStacker() {
                       <div key={ma.ma} className="glass-panel overflow-hidden">
                         {/* MA Header */}
                         <div className="px-4 py-3 flex items-center gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>{ma.ma}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{
+                            background: /^MA\d+$/.test(ma.ma) && maReference && maReference.length > 0 ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                            color: /^MA\d+$/.test(ma.ma) && maReference && maReference.length > 0 ? "#ef4444" : "#f59e0b",
+                          }}>{ma.ma}{/^MA\d+$/.test(ma.ma) && maReference && maReference.length > 0 && <span title="Not found in MA reference"> ⚠</span>}</span>
                           <span className="text-[12px] font-medium">{ma.size}</span>
                           <div className="flex-1" />
                           <span className="text-[10px]" style={{ color: "var(--muted)" }}>{ma.count} {t("cb.assign.entries")}</span>

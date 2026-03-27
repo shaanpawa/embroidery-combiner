@@ -406,10 +406,12 @@ def detect_assign_columns(path: str, preview_count: int = 5) -> AutoAssignResult
 def auto_assign_ma_com(
     path: str,
     column_map: Optional[Dict[str, int]] = None,
+    ma_lookup: Optional[Dict[str, str]] = None,
 ) -> AutoAssignResult:
     """Auto-assign MA and COM numbers based on size and colour columns.
 
-    MA: unique per size value (ordered by first appearance) → "MA1", "MA2", ...
+    MA: looked up from ma_lookup (normalized_size → real MA number) if provided,
+        otherwise falls back to sequential "MA1", "MA2", ...
     COM: unique per (fabric_colour, frame_colour, embroidery_colour) within each MA,
          sequential starting at 1 per MA group.
     """
@@ -465,9 +467,14 @@ def auto_assign_ma_com(
 
         # Assign MA
         if size_val not in size_to_ma:
-            size_to_ma[size_val] = f"MA{ma_counter}"
+            if ma_lookup and size_val in ma_lookup:
+                size_to_ma[size_val] = ma_lookup[size_val]
+            else:
+                size_to_ma[size_val] = f"MA{ma_counter}"
+                ma_counter += 1
+                if ma_lookup:
+                    warnings.append(f"Row {row_num}: size '{size_raw}' not found in MA reference table, assigned {size_to_ma[size_val]}")
             size_display[size_val] = size_raw  # Keep first seen raw value for display
-            ma_counter += 1
         ma = size_to_ma[size_val]
 
         # Assign COM

@@ -73,8 +73,73 @@ def init_db() -> sqlite3.Connection:
         conn.commit()
     except sqlite3.OperationalError:
         pass  # column already exists
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ma_reference (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            size_normalized  TEXT NOT NULL UNIQUE,
+            size_display     TEXT NOT NULL,
+            ma_number        TEXT NOT NULL,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
     conn.commit()
     return conn
+
+
+# ---------------------------------------------------------------------------
+# MA Reference CRUD
+# ---------------------------------------------------------------------------
+
+def get_ma_reference() -> List[Dict]:
+    """Return all MA reference mappings as a list of dicts."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT size_normalized, size_display, ma_number FROM ma_reference ORDER BY size_display"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_ma_lookup() -> Dict[str, str]:
+    """Return a dict of normalized_size → ma_number for use in auto-assign."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT size_normalized, ma_number FROM ma_reference"
+    ).fetchall()
+    return {r["size_normalized"]: r["ma_number"] for r in rows}
+
+
+def upsert_ma_reference(mappings: List[Dict]) -> int:
+    """Insert or replace MA reference mappings.
+
+    Each mapping must have: size_normalized, size_display, ma_number.
+    Returns the number of rows upserted.
+    """
+    db = get_db()
+    now = _now()
+    with _db_lock:
+        for m in mappings:
+            db.execute(
+                """
+                INSERT INTO ma_reference (size_normalized, size_display, ma_number, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(size_normalized) DO UPDATE SET
+                    size_display = excluded.size_display,
+                    ma_number = excluded.ma_number,
+                    created_at = excluded.created_at
+                """,
+                (m["size_normalized"], m["size_display"], m["ma_number"], now),
+            )
+        db.commit()
+    return len(mappings)
+
+
+def clear_ma_reference() -> int:
+    """Delete all MA reference mappings. Returns number of rows deleted."""
+    db = get_db()
+    with _db_lock:
+        cur = db.execute("DELETE FROM ma_reference")
+        db.commit()
+    return cur.rowcount
 
 
 # ---------------------------------------------------------------------------

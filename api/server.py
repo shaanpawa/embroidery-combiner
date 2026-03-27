@@ -44,6 +44,7 @@ from api.database import (
     delete_session as db_delete_session, list_sessions,
     get_session_dir, get_dst_dir, get_output_dir,
     cleanup_old_sessions,
+    get_ma_reference, get_ma_lookup, upsert_ma_reference, clear_ma_reference,
 )
 from api.auth import get_current_user
 
@@ -485,6 +486,99 @@ async def export_endpoint(
 
 
 # ---------------------------------------------------------------------------
+# MA Reference table
+# ---------------------------------------------------------------------------
+
+@app.get("/api/ma-reference")
+async def get_ma_reference_endpoint(user: dict = Depends(get_current_user)):
+    """Return the stored MA reference lookup table."""
+    mappings = get_ma_reference()
+    return {"count": len(mappings), "mappings": mappings}
+
+
+@app.post("/api/ma-reference/upload")
+async def upload_ma_reference_endpoint(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Upload an Excel file containing size → MA number mappings.
+
+    Expected format: Column A = size, Column F = MA number.
+    Replaces existing reference data.
+    """
+    from openpyxl import load_workbook
+    import tempfile
+
+    content = await file.read()
+    if len(content) > MAX_EXCEL_SIZE:
+        raise HTTPException(413, f"File too large (max {MAX_EXCEL_SIZE // 1024 // 1024}MB)")
+
+    # Write to temp file for openpyxl
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        wb = load_workbook(tmp_path, read_only=True, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+    finally:
+        os.remove(tmp_path)
+
+    if len(rows) < 2:
+        raise HTTPException(400, "Excel file has no data rows")
+
+    # Parse: Column A (index 0) = size, Column F (index 5) = MA number
+    mappings = []
+    seen_sizes = {}  # normalized → mapping dict
+    warnings = []
+
+    for row_num, row in enumerate(rows[1:], start=2):
+        if len(row) < 6:
+            continue
+        size_raw = str(row[0] or "").strip()
+        ma_raw = str(row[5] or "").strip()
+        if not size_raw or not ma_raw:
+            continue
+
+        size_normalized = re.sub(r'\s+', '', size_raw).lower()
+
+        if size_normalized not in seen_sizes:
+            seen_sizes[size_normalized] = {
+                "size_normalized": size_normalized,
+                "size_display": size_raw,
+                "ma_number": ma_raw,
+            }
+        elif seen_sizes[size_normalized]["ma_number"] != ma_raw:
+            warnings.append(
+                f"Row {row_num}: size '{size_raw}' mapped to '{ma_raw}' "
+                f"but already mapped to '{seen_sizes[size_normalized]['ma_number']}' — keeping first"
+            )
+
+    mappings = list(seen_sizes.values())
+    if not mappings:
+        raise HTTPException(400, "No valid size → MA mappings found in the file")
+
+    # Clear existing and insert new
+    clear_ma_reference()
+    count = upsert_ma_reference(mappings)
+
+    return {
+        "count": count,
+        "mappings": mappings,
+        "warnings": warnings,
+    }
+
+
+@app.delete("/api/ma-reference")
+async def delete_ma_reference_endpoint(user: dict = Depends(get_current_user)):
+    """Clear all MA reference data."""
+    deleted = clear_ma_reference()
+    return {"deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
 # Auto-assign MA & COM
 # ---------------------------------------------------------------------------
 
@@ -544,7 +638,9 @@ async def auto_assign_endpoint(
         except (json.JSONDecodeError, ValueError):
             raise HTTPException(400, "Invalid column_map JSON")
 
-    result = auto_assign_ma_com(excel_path, column_map=cmap)
+    # Load MA reference lookup if available
+    ma_ref = get_ma_lookup()
+    result = auto_assign_ma_com(excel_path, column_map=cmap, ma_lookup=ma_ref or None)
 
     # Store assignments in session for later use (download / apply)
     update_session(
