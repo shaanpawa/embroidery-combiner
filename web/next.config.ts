@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const isStaticBuild = process.env.BUILD_STATIC === "true";
 
 const nextConfig: NextConfig = {
+  compress: true,
   output: isStaticBuild ? "export" : undefined,
   // trailingSlash creates /stacker/index.html instead of stacker.html
   // which is needed for FastAPI StaticFiles(html=True) to serve /stacker correctly

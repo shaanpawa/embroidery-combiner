@@ -26,7 +26,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile, HTTPException, Depends
+from fastapi import BackgroundTasks, FastAPI, File, Form, Response, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -66,7 +66,7 @@ app = FastAPI(title="Micro Automation API", lifespan=lifespan)
 _export_semaphore = asyncio.Semaphore(2)
 
 # Compress JSON responses
-app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(GZipMiddleware, minimum_size=200)
 
 # ---------------------------------------------------------------------------
 # Security constants
@@ -91,10 +91,15 @@ def _safe_filename(name: str | None, fallback: str = "file") -> str:
     return name
 
 
+_health_counter = 0
+
 @app.get("/api/health")
 async def health(background_tasks: BackgroundTasks):
     """Health check — also used to wake up Render free tier before user needs it."""
-    background_tasks.add_task(cleanup_old_sessions, 24)
+    global _health_counter
+    _health_counter += 1
+    if _health_counter % 100 == 0:
+        background_tasks.add_task(cleanup_old_sessions, 24)
     return {"status": "ok"}
 
 
@@ -195,9 +200,15 @@ def _combos_to_json(combos: list) -> list:
 
 
 def _build_groups_response(entries, combos, groups) -> list:
+    # Pre-build lookup to avoid O(n*m) scan
+    from collections import defaultdict as _defaultdict
+    combo_by_group = _defaultdict(list)
+    for c in combos:
+        combo_by_group[(c.machine_program, c.com_no)].append(c)
+
     groups_data = []
     for g in groups:
-        g_combos = [c for c in combos if c.machine_program == g.machine_program and c.com_no == g.com_no]
+        g_combos = combo_by_group.get((g.machine_program, g.com_no), [])
         groups_data.append({
             "machine_program": g.machine_program,
             "com_no": g.com_no,
@@ -512,8 +523,9 @@ async def export_endpoint(
 # ---------------------------------------------------------------------------
 
 @app.get("/api/ma-reference")
-async def get_ma_reference_endpoint(user: dict = Depends(get_current_user)):
+async def get_ma_reference_endpoint(response: Response, user: dict = Depends(get_current_user)):
     """Return the stored MA reference lookup table."""
+    response.headers["Cache-Control"] = "private, max-age=300"
     mappings = get_ma_reference()
     return {"count": len(mappings), "mappings": mappings}
 
@@ -630,8 +642,9 @@ async def delete_ma_reference_endpoint(user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/com-reference")
-async def get_com_reference_endpoint(user: dict = Depends(get_current_user)):
+async def get_com_reference_endpoint(response: Response, user: dict = Depends(get_current_user)):
     """Return all stored COM reference entries."""
+    response.headers["Cache-Control"] = "private, max-age=300"
     from api.database import get_com_reference as _get_com_ref
     entries = _get_com_ref()
     return {"count": len(entries), "entries": entries}

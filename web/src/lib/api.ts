@@ -24,7 +24,6 @@ async function getToken(): Promise<string | null> {
 }
 
 const MAX_RETRIES = 3;
-const RETRY_DELAYS = [1000, 3000]; // delays before attempt 2 and 3
 
 function isRetryable(e: unknown): boolean {
   if (e instanceof DOMException && e.name === "AbortError") return true;
@@ -47,7 +46,8 @@ export async function authFetch(
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt - 1]));
+      const delay = Math.min(1000 * 2 ** (attempt - 1), 10000) + Math.random() * 500;
+      await new Promise((r) => setTimeout(r, delay));
     }
 
     const controller = new AbortController();

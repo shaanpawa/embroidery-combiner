@@ -98,6 +98,10 @@ def init_db() -> sqlite3.Connection:
             UNIQUE(ma_number, fabric_colour, embroidery_colour, frame_colour)
         )
     """)
+    # Performance indexes
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_email ON sessions(user_email)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_com_ref_ma ON com_reference(ma_number)")
     conn.commit()
     return conn
 
