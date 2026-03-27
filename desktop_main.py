@@ -15,6 +15,8 @@ import threading
 import time
 import webbrowser
 
+__version__ = "1.1.2"
+
 # ---------------------------------------------------------------------------
 # Resolve paths for frozen (PyInstaller) vs development mode
 # ---------------------------------------------------------------------------
@@ -89,13 +91,34 @@ log = logging.getLogger("MicroAutomation")
 # Error dialog — visible feedback when something goes wrong
 # ---------------------------------------------------------------------------
 
-def show_error_dialog(title: str, message: str):
-    """Show a native error dialog on Windows, fall back to print elsewhere."""
+def show_error_dialog(title: str, message: str, offer_log: bool = True):
+    """Show a native error dialog on Windows, fall back to print elsewhere.
+    If offer_log is True, appends log file path and offers to open it."""
+    # Always include log path in the message
+    if offer_log and LOG_FILE not in message:
+        message += f"\n\nLog file:\n{LOG_FILE}"
+
     log.error(f"ERROR DIALOG: {title} — {message}")
+
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # MB_ICONERROR
+            # MB_ICONERROR | MB_YESNO — ask if user wants to open log
+            if offer_log:
+                result = ctypes.windll.user32.MessageBoxW(
+                    0,
+                    message + "\n\nOpen log file? / เปิดไฟล์ล็อก?",
+                    title,
+                    0x10 | 0x04,  # MB_ICONERROR | MB_YESNO
+                )
+                if result == 6:  # IDYES
+                    try:
+                        import subprocess
+                        subprocess.Popen(["notepad.exe", LOG_FILE])
+                    except Exception:
+                        pass
+            else:
+                ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)
             return
         except Exception:
             pass
@@ -107,7 +130,7 @@ def show_error_dialog(title: str, message: str):
 # Port discovery
 # ---------------------------------------------------------------------------
 
-def find_free_port(start: int = 8000, end: int = 8020):
+def find_free_port(start: int = 8000, end: int = 8050):
     """Find an available port in the given range. Returns None if all taken."""
     for port in range(start, end + 1):
         try:
@@ -323,7 +346,7 @@ def run_tray(port: int, stop_event: threading.Event):
         icon = pystray.Icon(
             "MicroAutomation",
             img,
-            f"Micro Automation — localhost:{port}",
+            f"Micro Automation v{__version__} — localhost:{port}",
             menu=pystray.Menu(
                 pystray.MenuItem("Open Micro Automation", on_open, default=True),
                 pystray.MenuItem("Quit", on_quit),
@@ -347,6 +370,7 @@ def main():
     log.info(f"  APP_ROOT: {APP_ROOT}")
     log.info(f"  DATA_DIR: {DATA_DIR}")
     log.info(f"  LOG_FILE: {LOG_FILE}")
+    log.info(f"  Version: {__version__}")
     log.info(f"  Frozen: {getattr(sys, 'frozen', False)}")
     log.info("=" * 60)
 
@@ -372,8 +396,8 @@ def main():
     if port is None:
         show_error_dialog(
             "Micro Automation",
-            "Could not find a free port (8000-8020).\n"
-            "ไม่พบพอร์ตว่าง (8000-8020)\n\n"
+            "Could not find a free port (8000-8050).\n"
+            "ไม่พบพอร์ตว่าง (8000-8050)\n\n"
             "Please close other applications using these ports and try again.\n"
             "กรุณาปิดแอปพลิเคชันอื่นที่ใช้พอร์ตเหล่านี้แล้วลองอีกครั้ง\n\n"
             f"Log file: {LOG_FILE}",

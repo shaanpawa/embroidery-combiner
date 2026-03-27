@@ -102,6 +102,14 @@ def build_frontend():
     shutil.copytree(out_dir, static_dir)
     print(f"Copied {out_dir} -> {static_dir}")
 
+    # Validate critical files exist
+    for required in ["index.html", "stacker/index.html"]:
+        path = os.path.join(static_dir, required)
+        if not os.path.isfile(path):
+            print(f"ERROR: Critical file missing from static_web: {required}")
+            sys.exit(1)
+    print(f"static_web/ validated: index.html + stacker/index.html present")
+
 
 def build_pyinstaller():
     """Run PyInstaller to create the app bundle."""

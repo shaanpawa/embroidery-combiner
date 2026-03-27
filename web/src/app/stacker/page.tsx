@@ -442,12 +442,15 @@ export default function EmbroideryStacker() {
 
   // Keep-alive ping: prevent Render from sleeping while session is active
   useEffect(() => {
-    if (IS_LOCAL_MODE || !sessionId) return;
-    const interval = setInterval(() => {
-      fetch(`${API}/api/health`, { mode: "cors" }).catch(() => {});
-    }, 10 * 60 * 1000); // every 10 minutes
-    return () => clearInterval(interval);
-  }, [sessionId]);
+    if (IS_LOCAL_MODE) return;
+    const ping = () => fetch(`${API}/api/health`, { mode: "cors" }).catch(() => {});
+    // Ping every 5 minutes
+    const interval = setInterval(ping, 5 * 60 * 1000);
+    // Also ping immediately when tab regains focus (user returns after idle)
+    const onVisibility = () => { if (!document.hidden) ping(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisibility); };
+  }, []);
 
   const saveSessionName = useCallback(async (sid: string, name: string) => {
     const form = new FormData(); form.append("session_id", sid); form.append("name", name);
@@ -598,8 +601,13 @@ export default function EmbroideryStacker() {
     } catch { /* ignore */ }
   }, []);
 
-  // Load MA + COM reference on mount
-  useEffect(() => { fetchMaReference(); fetchComReference(); }, [fetchMaReference, fetchComReference]);
+  // Load MA + COM reference only AFTER backend is ready (prevents silent failures during warmup)
+  useEffect(() => {
+    if (backendStatus === "ready") {
+      fetchMaReference();
+      fetchComReference();
+    }
+  }, [backendStatus, fetchMaReference, fetchComReference]);
 
   const uploadMaReference = useCallback(async (file: File, mode: "replace" | "append" = "replace") => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
@@ -918,7 +926,12 @@ export default function EmbroideryStacker() {
 
   const connectingBanner = backendStatus !== "ready" ? (
     <div className="w-full text-center text-xs py-2 px-4" style={{ background: backendStatus === "failed" ? "var(--danger)" : "var(--accent)", color: "white" }}>
-      {backendStatus === "connecting" && <>{t("cb.server_waking") || "Waking up server..."} ({warmupElapsed}s)</>}
+      {backendStatus === "connecting" && (
+        <div className="flex items-center justify-center gap-2">
+          <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <span>{t("cb.server_waking") || "Connecting to server..."} ({warmupElapsed}s)</span>
+        </div>
+      )}
       {backendStatus === "failed" && (
         <>{t("cb.connect_failed") || "Could not reach server."} <button onClick={retryWarmup} className="underline ml-1 font-medium">{t("cb.retry") || "Retry"}</button></>
       )}
