@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
@@ -1324,9 +1325,8 @@ export default function EmbroideryStacker() {
                               const maComs = comReference?.filter(c => c.ma_number === m.ma_number) || [];
                               const isExpanded = expandedMaRows.has(m.ma_number);
                               return (
-                                <>
+                                <React.Fragment key={`ma-${i}`}>
                                   <tr
-                                    key={`ma-${i}`}
                                     style={{ cursor: maComs.length > 0 ? "pointer" : "default" }}
                                     onClick={() => {
                                       if (maComs.length === 0) return;
@@ -1379,7 +1379,7 @@ export default function EmbroideryStacker() {
                                       </td>
                                     </tr>
                                   )}
-                                </>
+                                </React.Fragment>
                               );
                             })}
                           </tbody>
