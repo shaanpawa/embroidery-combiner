@@ -54,7 +54,11 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: clean up old sessions from previous runs
+    # Startup: seed default MA/COM reference if empty
+    from api.seed_data import seed_reference_if_empty
+    seed_reference_if_empty()
+
+    # Clean up old sessions from previous runs
     deleted = cleanup_old_sessions(max_age_hours=24)
     if deleted:
         print(f"[startup] Cleaned up {deleted} expired session(s)")
@@ -533,12 +537,13 @@ async def get_ma_reference_endpoint(response: Response, user: dict = Depends(get
 @app.post("/api/ma-reference/upload")
 async def upload_ma_reference_endpoint(
     file: UploadFile = File(...),
+    mode: str = Form("replace"),
     user: dict = Depends(get_current_user),
 ):
     """Upload an Excel file containing size → MA number mappings.
 
     Expected format: Column A = size, Column F = MA number.
-    Replaces existing reference data.
+    mode='replace' clears existing data first; mode='append' only adds new entries.
     """
     from openpyxl import load_workbook
     import tempfile
@@ -619,9 +624,10 @@ async def upload_ma_reference_endpoint(
     if not mappings:
         raise HTTPException(400, "No valid size → MA mappings found in the file")
 
-    # Clear existing and insert new (both MA and COM references)
-    clear_ma_reference()
-    clear_com_reference()
+    # Replace clears everything first; append only adds new entries (upsert handles duplicates)
+    if mode == "replace":
+        clear_ma_reference()
+        clear_com_reference()
     count = upsert_ma_reference(mappings)
     com_count = upsert_com_reference(com_mappings) if com_mappings else 0
 

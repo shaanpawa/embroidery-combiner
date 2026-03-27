@@ -261,6 +261,7 @@ export default function EmbroideryStacker() {
   const [maRefLoading, setMaRefLoading] = useState(false);
   const [maRefExpanded, setMaRefExpanded] = useState(false);
   const maRefInputRef = useRef<HTMLInputElement>(null);
+  const maRefAppendInputRef = useRef<HTMLInputElement>(null);
   // COM Reference state
   const [comReference, setComReference] = useState<{id?: number; ma_number: string; com_number: number; fabric_colour: string; embroidery_colour: string; frame_colour: string}[] | null>(null);
   const [expandedMaRows, setExpandedMaRows] = useState<Set<string>>(new Set());
@@ -600,21 +601,24 @@ export default function EmbroideryStacker() {
   // Load MA + COM reference on mount
   useEffect(() => { fetchMaReference(); fetchComReference(); }, [fetchMaReference, fetchComReference]);
 
-  const uploadMaReference = useCallback(async (file: File) => {
+  const uploadMaReference = useCallback(async (file: File, mode: "replace" | "append" = "replace") => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) { showToast(t("err.invalid_excel")); return; }
     setMaRefLoading(true);
     try {
       const form = new FormData();
       form.append("file", file);
+      form.append("mode", mode);
       const res = await authFetch(`${API}/api/ma-reference/upload`, { method: "POST", body: form });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || res.statusText); }
       const data = await res.json();
-      setMaReference(data.mappings || []);
-      showToast(`${data.count} size → MA mappings loaded`, "success");
+      await fetchMaReference();
+      await fetchComReference();
+      const label = mode === "append" ? "added" : "loaded";
+      showToast(`${data.count} size → MA mappings ${label} (${data.com_count} COMs)`, "success");
       if (data.warnings?.length) data.warnings.forEach((w: string) => showToast(w, "warning"));
     } catch (e) { showToast(`Failed to upload MA reference: ${e instanceof Error ? e.message : "Unknown error"}`); }
     setMaRefLoading(false);
-  }, [showToast, t]);
+  }, [showToast, t, fetchMaReference, fetchComReference]);
 
   const clearMaReference = useCallback(async () => {
     try {
@@ -1301,19 +1305,30 @@ export default function EmbroideryStacker() {
                           <button onClick={clearMaReference} className="glass-btn text-[9px] px-2 py-1" style={{ color: "var(--error)" }}>Clear</button>
                         </>
                       )}
+                      {maReference && maReference.length > 0 && (
+                        <button
+                          onClick={() => maRefAppendInputRef.current?.click()}
+                          className="glass-btn text-[9px] px-2 py-1"
+                          disabled={maRefLoading}
+                          style={{ color: "var(--success)" }}
+                        >
+                          + Add New
+                        </button>
+                      )}
                       <button
                         onClick={() => maRefInputRef.current?.click()}
                         className="glass-btn text-[9px] px-2 py-1"
                         disabled={maRefLoading}
                         style={{ color: "var(--accent)" }}
                       >
-                        {maRefLoading ? "Uploading..." : maReference && maReference.length > 0 ? "Replace" : "Upload"}
+                        {maRefLoading ? "Uploading..." : maReference && maReference.length > 0 ? "Replace All" : "Upload"}
                       </button>
-                      <input ref={maRefInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadMaReference(e.target.files[0]); e.target.value = ""; }} />
+                      <input ref={maRefInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadMaReference(e.target.files[0], "replace"); e.target.value = ""; }} />
+                      <input ref={maRefAppendInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadMaReference(e.target.files[0], "append"); e.target.value = ""; }} />
                     </div>
                   </div>
                   {(!maReference || maReference.length === 0) && (
-                    <p style={{ color: "var(--muted)" }}>Upload your Size → MA reference Excel to use real MA numbers. Without it, MA1, MA2... will be generated.</p>
+                    <p style={{ color: "var(--muted)" }}>Loading default MA reference data...</p>
                   )}
                   {maRefExpanded && maReference && maReference.length > 0 && (
                     <div className="mt-2">
